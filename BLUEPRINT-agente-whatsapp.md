@@ -275,6 +275,33 @@ Requisitos que se derivan de esa decisión, y que condicionan el diseño de la a
   contadores, que sí ve. Por eso `events` es un log de decisión y no un volcado de mensajes: está pensado para
   poder diagnosticar sin leer conversaciones.
 
+### 7.3 Qué mide cada panel
+
+Son dos audiencias con preguntas distintas, así que son dos paneles distintos. No es una cuestión de permisos
+solamente: es que las métricas útiles para una son ruido para la otra.
+
+**Panel del cliente — responde "¿está funcionando?" y "¿tengo que hacer algo?"**
+
+- **Resultado primero:** citas agendadas, conversaciones resueltas sin intervención humana. Es lo que justifica la
+  suscripción, y lo que hace que renueve.
+- **Lo que requiere su atención:** conversaciones esperando respuesta, ventanas de 24 h por caducar, envíos
+  fallidos. Aquí es donde se usan el ámbar y el rojo.
+- **Actividad reciente**, leída de `events`.
+
+**Nunca en el panel del cliente: el coste de LLM.** Es el coste de la agencia, no del cliente. Enseñárselo revela
+el margen y no le sirve para nada: no puede actuar sobre esa cifra. Un cliente que ve "coste de IA: 3 $" junto a
+una factura de 200 € tiene una conversación pendiente que nadie quiere.
+
+**Panel de agencia — responde "¿cómo va el negocio y qué cliente necesita algo?"**
+
+- **Coste y consumo por workspace** (`usage_counters`), para saber cuánto gasta cada cliente y con qué margen.
+- Estado de conexión del canal y calidad del número.
+- Errores de envío y alertas de límite de coste.
+- Altas, plan y estado de cada workspace.
+
+Contar mensajes o conversaciones sirve poco en ambos casos: con volumen, ese número deja de significar nada.
+Las métricas son **de resultado** (cliente) o **de explotación** (agencia).
+
 ## 8. Contrato `Tool` y catálogo
 
 Interfaz única, extensible por workspace (de `ARQUITECTURA-OBJETIVO §La pieza clave`):
