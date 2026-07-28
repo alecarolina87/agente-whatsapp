@@ -329,7 +329,18 @@ y su webhook signing secret, y YCloud le factura directamente. La agencia solo l
 Vault, por referencia). OpenRouter, en cambio, es **una sola cuenta de la agencia** para toda la plataforma.
 
 Consecuencia para el alta de un cliente: antes de conectarlo hace falta que **él** tenga su cuenta de YCloud y su
-número verificado. Es el paso que la agencia no puede hacer por él, y el onboarding tiene que guiarlo (§7.2).
+número verificado. Es el paso que la agencia no puede hacer por él —Meta exige verificar al negocio con sus datos
+fiscales—, así que solo puede **acompañarlo**.
+
+**Cómo se resuelve ese paso:**
+
+1. **Un vídeo grabado una vez** con el proceso completo. Es lo que hace que el alta escale: la mayoría lo resuelve
+   sola y solo pide ayuda quien se atasca.
+2. **Videollamada de apoyo** para quien la necesite, compartiendo pantalla mientras el cliente hace los clics.
+3. **La app guía igualmente** (§7.2): lista de pasos, y errores explicados en su idioma cuando algo falta.
+
+Ese acompañamiento es **trabajo facturable** —una puesta en marcha, aparte de la cuota— y es donde se pierde a la
+mayoría de clientes si se les deja solos. Conviene tratarlo como parte del producto, no como un favor.
 
 ## 8. Contrato `Tool` y catálogo
 
