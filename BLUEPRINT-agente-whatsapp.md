@@ -332,15 +332,35 @@ Consecuencia para el alta de un cliente: antes de conectarlo hace falta que **é
 número verificado. Es el paso que la agencia no puede hacer por él —Meta exige verificar al negocio con sus datos
 fiscales—, así que solo puede **acompañarlo**.
 
-**Cómo se resuelve ese paso:**
+**Cómo se resuelve ese paso: una lista guiada dentro de la app, con un clip por paso.**
 
-1. **Un vídeo grabado una vez** con el proceso completo. Es lo que hace que el alta escale: la mayoría lo resuelve
-   sola y solo pide ayuda quien se atasca.
-2. **Videollamada de apoyo** para quien la necesite, compartiendo pantalla mientras el cliente hace los clics.
-3. **La app guía igualmente** (§7.2): lista de pasos, y errores explicados en su idioma cuando algo falta.
+```
+Conecta tu WhatsApp                                    3 de 5
 
-Ese acompañamiento es **trabajo facturable** —una puesta en marcha, aparte de la cuota— y es donde se pierde a la
-mayoría de clientes si se les deja solos. Conviene tratarlo como parte del producto, no como un favor.
+✅ 1. Crear tu cuenta de YCloud                [ ▶ ver cómo · 1:20 ]
+✅ 2. Verificar tu negocio en Meta             [ ▶ ver cómo · 2:40 ]
+✅ 3. Añadir tu número                         [ ▶ ver cómo · 0:50 ]
+⬜ 4. Copiar tu API Key aquí                   [ ▶ ver cómo · 0:40 ]
+⬜ 5. Pegar la URL del webhook en YCloud       [ ▶ ver cómo · 1:10 ]
+```
+
+**Clips cortos por paso, no un vídeo largo.** Nadie ve diez minutos seguidos: la gente se atasca en un paso
+concreto y quiere ayuda de *ese* paso. Y cuando YCloud cambie su interfaz —que cambiará— se regraba un clip de 40
+segundos en vez del vídeo entero.
+
+Sobre la producción de esos clips:
+
+- **La grabación de pantalla es real.** Enseña las pantallas de YCloud y de Meta; no se puede generar.
+- **Con la voz de la agencia**, no sintética. La ventaja frente a una plataforma grande es que detrás hay una
+  persona; una voz de IA tira eso por la borda. No hace falta salir en cámara.
+- La IA sirve para el guion, los subtítulos y el montaje.
+
+Y por detrás: **videollamada de apoyo** para quien se atasque, y **errores explicados en su idioma** cuando falte
+algo (§7.2). Cada error bien explicado dentro de la app es una llamada que no se recibe — y eso es lo que hace
+sostenible el soporte cuando hay diez clientes en vez de tres.
+
+La **puesta en marcha** es trabajo facturable aparte de la cuota mensual; el **soporte del día a día** va incluido
+en ella, y es de hecho lo que se vende: no software, sino que su WhatsApp esté atendido.
 
 ## 8. Contrato `Tool` y catálogo
 
