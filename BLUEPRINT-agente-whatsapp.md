@@ -222,6 +222,59 @@ document_id fk, metadata jsonb)`.
 - **Secrets:** credenciales de tenant (YCloud/OpenRouter/HighLevel) en **Supabase Vault** (`*_ref` en las tablas),
   descifradas solo server-side al momento de usar. `SUPABASE_SERVICE_ROLE_KEY` solo en el entorno server de Vercel.
 
+### 7.1 Nivel agencia — acceso al estado, nunca al contenido
+
+Hay un nivel por encima del workspace: **quien explota la plataforma** y da de alta a varios negocios como
+clientes. Necesita una vista transversal para operar (¿está YCloud conectado en cada cliente? ¿alguien se acerca al
+límite de coste? ¿hay envíos fallidos?), pero **no necesita leer las conversaciones de nadie**.
+
+**Decisión: la agencia ve el estado operativo, no el contenido.**
+
+| La agencia SÍ ve | La agencia NO ve |
+| --- | --- |
+| Nº de conversaciones, mensajes y miembros por workspace | El texto de los mensajes |
+| Estado de conexión del canal (YCloud) y calidad del número | Teléfonos y nombres de los contactos |
+| Consumo y coste acumulado; alertas de límite | `custom_fields`, notas y etiquetas de contactos |
+| Errores de envío y eventos del sistema | El detalle de cualquier conversación |
+| Plan, fecha de alta y estado del workspace | — |
+
+**Por qué, y no es solo prudencia:** los mensajes de una clínica son datos de salud. Si quien opera la plataforma
+puede leerlos, asume un riesgo que no le aporta nada y complica su posición ante el RGPD. Con este límite la
+agencia es encargada del tratamiento con acceso mínimo. **Y es argumento comercial**: se le puede decir al cliente
+"no puedo leer lo que te escriben tus pacientes" y que sea verdad.
+
+**Modelo de datos.** Tabla `platform_admins` (`user_id fk→auth.users`, `created_at`) y helper
+`is_platform_admin()`, análogo a `is_member()` y también `security definer`.
+
+**Implementación del acceso.** La agencia **no recibe políticas RLS sobre `messages`, `contacts` ni
+`conversations`**. Su panel se alimenta de:
+
+- una **vista agregada** `agency_workspace_stats` (contadores por workspace, sin filas de negocio), y
+- `channels`, `integrations`, `usage_counters` y `events`, donde sí hay política para `is_platform_admin()`.
+
+Así el límite no depende de que la interfaz "no muestre" el contenido: **la base de datos no se lo entrega**. Un
+fallo de programación en el panel no puede convertirse en una fuga.
+
+**Tests obligatorios**, en la línea de los de aislamiento de F0: un `platform_admin` que consulte `messages` o
+`contacts` de cualquier workspace debe recibir **cero filas**.
+
+### 7.2 Que el cliente pueda usarla sin ayuda
+
+El límite anterior tiene una consecuencia: **si la agencia no ve el contenido, no puede resolver los problemas del
+cliente entrando a mirar**. Así que la interfaz del workspace tiene que bastarse sola.
+
+Requisitos que se derivan de esa decisión, y que condicionan el diseño de la app del cliente:
+
+- **Alta autónoma:** conectar el número, escribir el prompt del negocio y probar el agente sin depender de nadie.
+- **Errores explicados en su idioma:** "el número no está conectado" en vez de un código de YCloud. Cada error
+  visible dice **qué ha pasado y qué hacer**.
+- **Estado siempre a la vista:** si la IA está activa o pausada, si la ventana de 24 h sigue abierta, si un mensaje
+  falló. Sin tener que buscarlo.
+- **Nada que requiera saber de tecnología:** ni ids, ni JSON, ni webhooks en la interfaz del cliente.
+- **Soporte sin acceso a datos:** cuando el cliente pida ayuda, la agencia se apoya en `events` y en los
+  contadores, que sí ve. Por eso `events` es un log de decisión y no un volcado de mensajes: está pensado para
+  poder diagnosticar sin leer conversaciones.
+
 ## 8. Contrato `Tool` y catálogo
 
 Interfaz única, extensible por workspace (de `ARQUITECTURA-OBJETIVO §La pieza clave`):
@@ -359,7 +412,7 @@ Objetivo: agrupar intención esperando el **silencio del usuario** (no responder
 | Fase | Entregable | Gate de salida |
 |------|-----------|----------------|
 | **F0 Foundations** | Deps (shadcn, zod, vitest), schema núcleo + RLS, Vault, auth + app shell, capa de datos con `workspace_id`, pooler transaction mode | Migraciones aplicadas; tests de aislamiento en verde; login funciona |
-| **F1 MVP camino feliz** | Spike YCloud; clientes YCloud/OpenRouter; webhook endurecido (firma+dedupe+ACK+after()); guardrail 24h mínimo; inbox realtime + toggle IA/humano; controles de costo | Mensaje real WhatsApp → respuesta IA; duplicados imposibles; fuera de ventana la IA se abstiene |
+| **F1 MVP camino feliz** | Spike YCloud; clientes YCloud/OpenRouter; webhook endurecido (firma+dedupe+ACK+after()); guardrail 24h mínimo; inbox realtime + toggle IA/humano + **tiempo restante de ventana en cada fila de la lista**; controles de costo | Mensaje real WhatsApp → respuesta IA; duplicados imposibles; fuera de ventana la IA se abstiene; **desde la lista se ve en cuáles se puede escribir sin abrirlas** |
 | **F2 Buffer ⭐** | `message_batches` + pg_cron/pg_net + reconciliación; agrupación por silencio | Múltiples mensajes → 1 respuesta agrupada; sin carreras |
 | **F3 State machine + handoff** | Estados; auto-handoff; notificación; coexistencia móvil | Handoff manual y automático; IA se auto-pausa con humano |
 | **F4 Ventana 24h + templates** | Guardrail duro; template picker; sync Meta; validación estructura; override admin | Fuera de ventana solo template aprobado; UI de ventana |
@@ -367,6 +420,7 @@ Objetivo: agrupar intención esperando el **silencio del usuario** (no responder
 | **F6 HighLevel** | OAuth; contacto/tags/oportunidad/cita; webhooks; loop-breaking | Sync bidireccional sin loops; cita directa creada |
 | **F7 Setter + agenda** | Knockout, score, resumen, post-action; agenda link + HL | Lead calificado y agendado end-to-end |
 | **F8 Resto** | Prompting avanzado, Business info UI, KB+pgvector, config modelos+costos, roles, dashboards, onboarding wizard, media | Onboarding self-serve; KB citada; métricas de costo |
+| **F9 Panel de agencia** | `platform_admins` + `is_platform_admin()`; vista `agency_workspace_stats`; alta de cliente; estado de canal, consumo y errores por workspace (§7.1) | Un `platform_admin` ve el estado de todos los workspaces y **cero filas** al consultar `messages` o `contacts` |
 
 **Estrategia:** MVP del camino feliz primero, luego capas. **Cada fase se valida con demo de número real** como gate.
 
