@@ -324,9 +324,12 @@ su número y su historial**. No queda atrapado, y eso hace el servicio más fác
   agencia). El panel de agencia muestra las dos cifras por separado, por cliente.
 - El **cost cap y el kill-switch** protegen el único coste que asume la agencia: el del modelo.
 
-> **Pendiente de confirmar con el BSP (YCloud):** cómo se organizan las sub-cuentas y si la facturación puede ir
-> directamente a cada cliente, o si pasa por la cuenta de la agencia y hay que repercutirla. Condiciona el flujo
-> de alta de un cliente nuevo, así que hay que resolverlo antes de F9.
+**Confirmado (2026-07-28):** no hay sub-cuentas. **Cada cliente abre su propia cuenta de YCloud**, con su API Key
+y su webhook signing secret, y YCloud le factura directamente. La agencia solo los guarda en el workspace (en
+Vault, por referencia). OpenRouter, en cambio, es **una sola cuenta de la agencia** para toda la plataforma.
+
+Consecuencia para el alta de un cliente: antes de conectarlo hace falta que **él** tenga su cuenta de YCloud y su
+número verificado. Es el paso que la agencia no puede hacer por él, y el onboarding tiene que guiarlo (§7.2).
 
 ## 8. Contrato `Tool` y catálogo
 

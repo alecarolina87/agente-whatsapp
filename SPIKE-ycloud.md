@@ -84,6 +84,24 @@ event.type  ===  "whatsapp.inbound_message.received"
 
 ---
 
+## 2.b Una URL de webhook por workspace
+
+**Cada workspace tiene su propia URL de webhook, con su identificador dentro**
+(`.../api/webhooks/ycloud?wsid={workspaceId}` o equivalente en la ruta).
+
+No es un adorno: **es lo que permite verificar la firma.** Cuando llega una
+petición hay que saber con qué secreto comprobarla, y ese secreto es distinto
+por cliente. Averiguar de quién es mirando el cuerpo no vale — del cuerpo no
+puede uno fiarse hasta *después* de verificar la firma. El identificador en la
+URL rompe ese círculo.
+
+Y no debilita la seguridad: alguien que adivine un `wsid` sigue sin poder
+falsificar una firma válida, porque no tiene el secreto. El identificador dice
+*con qué llave mirar*, no abre nada.
+
+La alternativa —un único secreto para todos los workspaces— se descarta: la
+fuga del secreto de un cliente comprometería a todos.
+
 ## 3. Qué implica para el diseño ya escrito
 
 | Contrato de YCloud | Dónde encaja en el blueprint |
@@ -101,9 +119,11 @@ event.type  ===  "whatsapp.inbound_message.received"
 - [ ] **Prueba en vivo**: enviar y recibir un mensaje real con el número propio,
       y guardar el JSON exacto del inbound. Lo documentado aquí sale de una
       integración que funciona, pero el gate del §14 pide comprobarlo.
-- [ ] **Facturación y sub-cuentas** (BLUEPRINT §7.4): confirmar si cada cliente
-      puede tener su propia cuenta y que Meta le facture directamente, o si pasa
-      todo por la cuenta de la agencia.
+- [x] ~~Facturación y sub-cuentas~~ **RESUELTO.** No hay sub-cuentas: **cada
+      cliente tiene su propia cuenta de YCloud**, con su API Key y su webhook
+      secret, y YCloud le factura a él directamente. Confirma el reparto del
+      §7.4: WhatsApp lo paga el cliente, el LLM la agencia (una sola cuenta de
+      OpenRouter para toda la plataforma).
 - [ ] Formato exacto del inbound para **audio, imagen y documento**, que en F1
       no hacen falta pero llegan en F8.
 
