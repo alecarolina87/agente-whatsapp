@@ -1,26 +1,112 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================================
+   Sistema de diseño · agente-whatsapp
+   Dark-first. Los tokens van en OKLch, que mantiene el brillo percibido
+   constante al cambiar de tono: si más adelante se cambia el acento, no hay que
+   recalibrar los contrastes a ojo.
+
+   Adaptado del design.md propio, con dos cambios deliberados:
+
+   1. El acento pasa de lima #B5F23D a CIAN. El lima competía con el verde de
+      WhatsApp #25D366, que es inevitable en un inbox de WhatsApp.
+   2. La tipografía pasa a IBM Plex, diseñada para interfaces técnicas. La mono
+      es para teléfonos E.164, wamid, horas y costes: alinea columnas y hace que
+      un identificador no se confunda con un nombre.
+
+   Se conserva: dark-first, radio máximo 16px, y ámbar/rojo reservados para
+   estados, nunca para marca.
+   ============================================================================ */
+
+@theme {
+  /* ── Marca ────────────────────────────────────────────────────────────── */
+  --color-primary: oklch(0.79 0.13 205);
+  /* Tinta oscura sobre el cian: es un color claro, así que NUNCA texto blanco
+     encima. La misma regla que tenía el lima. */
+  --color-primary-foreground: oklch(0.22 0.04 210);
+  --color-ring: oklch(0.79 0.13 205);
+
+  /* ── Neutrales (tema oscuro, el de por defecto) ───────────────────────── */
+  --color-background: oklch(0.17 0.006 264);
+  --color-foreground: oklch(0.97 0.002 247);
+  --color-card: oklch(0.21 0.006 264);
+  --color-muted: oklch(0.26 0.006 264);
+  --color-muted-foreground: oklch(0.7 0.012 264);
+  --color-border: oklch(0.28 0.006 264);
+  --color-input: oklch(0.3 0.006 264);
+
+  /* ── Semánticos ───────────────────────────────────────────────────────────
+     Reservados: no se usan como color de marca. El ámbar es de la ventana de
+     24 h por caducar y del coste al límite; si fuera el color de marca, se
+     perdería como señal. */
+  --color-success: oklch(0.72 0.17 150);
+  --color-warning: oklch(0.82 0.16 85);
+  --color-info: oklch(0.68 0.14 250);
+  --color-destructive: oklch(0.62 0.21 25);
+
+  /* El verde de WhatsApp, solo para lo que es de WhatsApp. */
+  --color-whatsapp: oklch(0.75 0.19 152);
+
+  /* ── Tipografía ───────────────────────────────────────────────────────── */
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* ── Forma ────────────────────────────────────────────────────────────────
+     Radio máximo 16px en contenedores. Solo pills, avatares y badges van
+     completamente redondeados. */
+  --radius-card: 16px;
+  --radius-control: 10px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Tema claro, como alternativa. El oscuro es el de por defecto porque un
+   operador mira esta pantalla durante toda su jornada. */
+.light {
+  --color-background: oklch(0.99 0.002 247);
+  --color-foreground: oklch(0.2 0.01 264);
+  --color-card: oklch(1 0 0);
+  --color-muted: oklch(0.96 0.003 264);
+  --color-muted-foreground: oklch(0.5 0.012 264);
+  --color-border: oklch(0.91 0.004 264);
+  --color-input: oklch(0.88 0.005 264);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    color-scheme: dark;
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Un halo cian muy tenue arriba, para que el fondo no sea negro plano.
+     Es el único degradado permitido. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background: radial-gradient(
+      60rem 32rem at 50% -12rem,
+      color-mix(in oklch, var(--color-primary) 12%, transparent),
+      transparent 70%
+    );
+  }
+
+  /* El foco tiene que verse: esta interfaz se recorre mucho con teclado. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  /* Los datos técnicos —teléfonos, ids, importes— en la mono y con cifras de
+     ancho fijo, para que las columnas cuadren. */
+  .dato {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
 }

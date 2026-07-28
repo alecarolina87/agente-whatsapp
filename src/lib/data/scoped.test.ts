@@ -18,6 +18,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const admin = createAdminClient();
 
+/**
+ * Sin tipos generados de la base de datos, el cliente devuelve las columnas
+ * como `unknown`. Este ayudante fija la forma esperada en los tests, que es lo
+ * único que necesitan. Cuando se generen los tipos con la CLI de Supabase, esto
+ * desaparece.
+ */
+type Contacto = { name: string | null };
+
+const nombresDe = (filas: unknown): (string | null)[] =>
+  (filas as Contacto[] | null)?.map((c) => c.name) ?? [];
+
 let wsA: string;
 let wsB: string;
 
@@ -53,8 +64,8 @@ describe("capa de datos con scope", () => {
     const { data: deA } = await scoped(wsA).from("contacts").select("name");
     const { data: deB } = await scoped(wsB).from("contacts").select("name");
 
-    expect(deA?.map((c) => c.name)).toEqual(["Ana de A"]);
-    expect(deB?.map((c) => c.name)).toEqual(["Bea de B"]);
+    expect(nombresDe(deA)).toEqual(["Ana de A"]);
+    expect(nombresDe(deB)).toEqual(["Bea de B"]);
   });
 
   it("el mismo teléfono puede existir en dos workspaces distintos", async () => {
@@ -73,7 +84,7 @@ describe("capa de datos con scope", () => {
     await scoped(wsB).from("contacts").update({ name: "Secuestrado" });
 
     const { data } = await scoped(wsA).from("contacts").select("name");
-    expect(data?.[0]?.name).toBe("Ana de A");
+    expect(nombresDe(data)[0]).toBe("Ana de A");
   });
 
   it("no se puede borrar un contacto de otro workspace", async () => {
@@ -90,10 +101,10 @@ describe("capa de datos con scope", () => {
       .insert({ wa_phone: "+34600000002", name: "Intruso", workspace_id: wsB });
 
     const { data: enB } = await scoped(wsB).from("contacts").select("name");
-    expect(enB?.some((c) => c.name === "Intruso")).toBe(false);
+    expect(nombresDe(enB)).not.toContain("Intruso");
 
     const { data: enA } = await scoped(wsA).from("contacts").select("name");
-    expect(enA?.some((c) => c.name === "Intruso")).toBe(true);
+    expect(nombresDe(enA)).toContain("Intruso");
   });
 
   it("un update no puede mover una fila a otro workspace", async () => {
