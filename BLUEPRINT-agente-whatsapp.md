@@ -302,6 +302,32 @@ una factura de 200 € tiene una conversación pendiente que nadie quiere.
 Contar mensajes o conversaciones sirve poco en ambos casos: con volumen, ese número deja de significar nada.
 Las métricas son **de resultado** (cliente) o **de explotación** (agencia).
 
+### 7.4 Reparto de costes y titularidad de la WABA
+
+**El número y la cuenta de empresa de Meta (WABA) son del cliente, no de la agencia.** Meta exige verificar al
+negocio con sus datos fiscales y factura al titular de la cuenta. De ahí se deriva el reparto:
+
+| Coste | Lo paga | Por qué |
+| --- | --- | --- |
+| Mensajes de WhatsApp (Meta / BSP) | **El cliente** | La WABA es suya y Meta le factura a él |
+| Modelo de lenguaje (OpenRouter) | **La agencia** | Es el motor de la plataforma; el cliente no tiene relación con el proveedor |
+| Plataforma | El cliente, a la agencia | Cuota del servicio |
+
+Que la WABA sea del cliente no es solo una cuestión de facturación: **si deja de trabajar con la agencia, se lleva
+su número y su historial**. No queda atrapado, y eso hace el servicio más fácil de vender.
+
+**Consecuencias para la arquitectura**, ya cubiertas por el modelo de datos:
+
+- `channels.ycloud_credential_ref` e `integrations.credentials_ref` son **por workspace**: cada cliente puede
+  tener sus propias credenciales, que es lo que exige este reparto.
+- `usage_counters` separa `message_count` (coste del cliente) de `tokens_in`/`tokens_out`/`cost_usd` (coste de la
+  agencia). El panel de agencia muestra las dos cifras por separado, por cliente.
+- El **cost cap y el kill-switch** protegen el único coste que asume la agencia: el del modelo.
+
+> **Pendiente de confirmar con el BSP (YCloud):** cómo se organizan las sub-cuentas y si la facturación puede ir
+> directamente a cada cliente, o si pasa por la cuenta de la agencia y hay que repercutirla. Condiciona el flujo
+> de alta de un cliente nuevo, así que hay que resolverlo antes de F9.
+
 ## 8. Contrato `Tool` y catálogo
 
 Interfaz única, extensible por workspace (de `ARQUITECTURA-OBJETIVO §La pieza clave`):
