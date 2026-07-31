@@ -1,5 +1,7 @@
 import type { Mensaje } from "@/lib/openrouter/client";
 
+import { MARCA_HANDOFF } from "./handoff";
+
 /**
  * Construcción de la conversación que se le manda al modelo.
  *
@@ -32,6 +34,15 @@ const REGLAS_DE_LA_PLATAFORMA = [
   "No prometas resultados médicos, terapéuticos ni de salud.",
   "No pidas datos bancarios ni contraseñas.",
   "Responde en el idioma en que te escriban.",
+  /*
+   * La regla del handoff. Va con un ejemplo porque sin él los modelos tienden
+   * a escribir la marca en medio de la frase o a explicarla al cliente.
+   *
+   * El texto sí se envía; la marca se quita antes (ver handoff.ts). Y se pide
+   * que la respuesta siga siendo útil: un "no puedo ayudarte" a secas deja al
+   * cliente colgado mientras espera a que alguien lea el aviso.
+   */
+  `Si no puedes resolver algo, o te piden hablar con una persona, despídete con naturalidad diciendo que lo pasas al equipo y añade ${MARCA_HANDOFF} al final del mensaje, en una línea aparte. Nunca menciones esa marca ni la expliques.`,
 ].join("\n");
 
 /** Lo que se usa si el canal todavía no tiene personalidad configurada. */

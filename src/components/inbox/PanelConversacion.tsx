@@ -7,7 +7,7 @@ import { alternarIA, enviarComoHumano, marcarLeida } from "@/app/app/inbox/accio
 import { createClient } from "@/lib/supabase/client";
 import type { HiloConversacion } from "@/lib/data/inbox-tipos";
 
-import { EstadoVentana } from "./EstadoVentana";
+import { AvisoHandoff, EstadoVentana } from "./EstadoVentana";
 
 /**
  * El hilo de una conversación, con el interruptor y el cuadro de escribir.
@@ -90,6 +90,7 @@ export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {hilo.estado === "handoff_pending" && <AvisoHandoff />}
           <EstadoVentana caducaEn={hilo.ventanaCaducaEn} />
 
           <button

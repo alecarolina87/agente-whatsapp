@@ -6,6 +6,7 @@ import { leerSecreto } from "@/lib/vault";
 import { enviarTexto } from "@/lib/ycloud/client";
 
 import { puedeEnviarTextoLibre, superaLimiteDeMensajes } from "./guardrails";
+import { evaluarHandoff, explicarHandoff } from "./handoff";
 import { comprobarLimites, explicarFreno } from "./limites";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "./prompt";
 
@@ -187,7 +188,24 @@ export async function responderConversacion({
     return { clase: "error", motivo };
   }
 
-  // ── 8. El envío ───────────────────────────────────────────────────────────
+  /*
+   * ── 8. ¿Hace falta una persona? ───────────────────────────────────────────
+   *
+   * Se decide **antes de enviar**, porque la marca que pone el modelo no puede
+   * llegar al cliente bajo ningún concepto. `evaluarHandoff` devuelve siempre
+   * el texto ya limpio, haya handoff o no.
+   *
+   * La respuesta se envía igualmente: el cliente merece una despedida, no un
+   * silencio mientras espera a que alguien lea el aviso.
+   */
+  const ultimoDelContacto = [...historial].reverse().find((m) => m.direction === "in")?.text;
+
+  const handoff = evaluarHandoff({
+    respuestaDelModelo: respuesta.texto,
+    ultimoMensajeDelContacto: ultimoDelContacto,
+  });
+
+  // ── 9. El envío ───────────────────────────────────────────────────────────
   const apiKeyYCloud = await leerSecreto(canal.ycloud_credential_ref);
   if (!apiKeyYCloud) {
     await registrar("ai.failed", { fase: "credenciales", motivo: "canal sin clave de YCloud" });
@@ -200,7 +218,7 @@ export async function responderConversacion({
       apiKey: apiKeyYCloud,
       desde: canal.phone_number,
       hacia: contacto.wa_phone,
-      texto: respuesta.texto,
+      texto: handoff.texto,
     });
   } catch (causa) {
     const motivo = causa instanceof Error ? causa.message : String(causa);
@@ -213,14 +231,14 @@ export async function responderConversacion({
     return { clase: "error", motivo };
   }
 
-  // ── 9. Dejar constancia ───────────────────────────────────────────────────
+  // ── 10. Dejar constancia ───────────────────────────────────────────────────
   const ahora = new Date().toISOString();
 
   await db.from("messages").insert({
     conversation_id: conversacionId,
     direction: "out",
     type: "text",
-    text: respuesta.texto,
+    text: handoff.texto,
     wamid: envio.wamid,
     sender: "ai",
     status: "sent",
@@ -234,10 +252,29 @@ export async function responderConversacion({
     },
   });
 
+  /*
+   * Con handoff, la conversación cambia de dueño: pasa a 'handoff_pending' y la
+   * IA se apaga. Si siguiera activa, el próximo mensaje del cliente recibiría
+   * otra respuesta automática justo cuando acaba de pedir una persona — y eso
+   * es exactamente lo que hace que la gente pierda la paciencia con los bots.
+   */
   await db
     .from("conversations")
-    .update({ last_outbound_at: ahora, last_message_at: ahora })
+    .update({
+      last_outbound_at: ahora,
+      last_message_at: ahora,
+      ...(handoff.motivo
+        ? { state: "handoff_pending", ai_enabled: false }
+        : {}),
+    })
     .eq("id", conversacionId);
+
+  if (handoff.motivo) {
+    await registrar("handoff.requested", {
+      motivo: handoff.motivo,
+      explicacion: explicarHandoff(handoff.motivo),
+    });
+  }
 
   await registrar("ai.replied", {
     wamid: envio.wamid,

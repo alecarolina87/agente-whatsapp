@@ -115,6 +115,24 @@ function calcular(caducaEn: string | null, ahora: number | null) {
   };
 }
 
+/**
+ * Aviso de que esta conversación espera a una persona.
+ *
+ * Se pinta en ámbar y no en rojo a propósito: no es un error, es una tarea
+ * pendiente. El rojo se reserva para lo que está roto.
+ */
+export function AvisoHandoff({ compacto = false }: { compacto?: boolean }) {
+  return (
+    <span
+      className="dato inline-flex items-center gap-1.5 rounded-full bg-warning/15 px-2.5 py-1 text-xs text-warning"
+      title="El agente pidió ayuda o el contacto pidió hablar con una persona"
+    >
+      <span aria-hidden="true">!</span>
+      {compacto ? "Handoff" : "Espera a una persona"}
+    </span>
+  );
+}
+
 function formatear(ms: number) {
   const horas = Math.floor(ms / HORA);
   const minutos = Math.floor((ms % HORA) / 60_000);

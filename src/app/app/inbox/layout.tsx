@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { EstadoVentana } from "@/components/inbox/EstadoVentana";
+import { AvisoHandoff, EstadoVentana } from "@/components/inbox/EstadoVentana";
 import { ListaEnVivo } from "@/components/inbox/ListaEnVivo";
 import { listarConversaciones, workspaceActual } from "@/lib/data/inbox";
 
@@ -68,7 +68,8 @@ export default async function LayoutInbox({ children }: { children: React.ReactN
                     {c.ultimoTexto ?? "Sin mensajes"}
                   </p>
 
-                  <div className="mt-1.5 flex items-center gap-2">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    {c.estado === "handoff_pending" && <AvisoHandoff compacto />}
                     <EstadoVentana caducaEn={c.ventanaCaducaEn} compacto />
                     {!c.iaActiva && (
                       <span className="dato text-[11px] text-muted-foreground">
