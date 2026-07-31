@@ -7,7 +7,7 @@
  * impide que un mismo cliente aparezca tres veces en la bandeja. Pero un índice
  * único compara **texto**: si el mismo teléfono llega escrito de tres formas
  *
- *     +34 662 55 28 51   ·   34662552851   ·   0034662552851
+ *     +34 600 00 00 00   ·   34600000000   ·   0034600000000
  *
  * el índice ve tres valores distintos, los admite los tres, y el historial de
  * esa persona queda partido en tres conversaciones que no se hablan entre sí.
@@ -18,7 +18,7 @@
  * ## Qué es E.164
  *
  * El formato internacional: un `+`, el prefijo de país y el número, sin espacios
- * ni separadores, con un máximo de 15 dígitos. `+34662552851`.
+ * ni separadores, con un máximo de 15 dígitos. `+34600000000`.
  *
  * ## Por qué sin librería
  *

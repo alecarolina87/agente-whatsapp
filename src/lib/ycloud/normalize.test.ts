@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { normalizarE164, normalizarE164OFallar } from "./normalize";
 
-const ESPERADO = "+34662552851";
+const ESPERADO = "+34600000000";
 
 describe("normalizarE164", () => {
   /*
@@ -13,13 +13,13 @@ describe("normalizarE164", () => {
    */
   it("colapsa todas las formas del mismo número en una sola", () => {
     const formas = [
-      "+34662552851",
-      "34662552851",
-      "0034662552851",
-      "+34 662 55 28 51",
-      "+34-662-552-851",
-      " +34 (662) 552.851 ",
-      "662552851",
+      "+34600000000",
+      "34600000000",
+      "0034600000000",
+      "+34 600 00 00 00",
+      "+34-600-000-000",
+      " +34 (600) 000.000 ",
+      "600000000",
     ];
 
     const normalizadas = new Set(formas.map((f) => normalizarE164(f)));
@@ -43,8 +43,8 @@ describe("normalizarE164", () => {
       ["solo texto", "no soy un teléfono"],
       ["solo símbolos", "+++"],
       ["demasiado corto", "+3466"],
-      ["más de 15 dígitos", "+3466255285112345"],
-      ["empieza por cero", "+0034662552851"],
+      ["más de 15 dígitos", "+3460000000012345"],
+      ["empieza por cero", "+0034600000000"],
     ])("%s", (_caso, entrada) => {
       expect(normalizarE164(entrada)).toBeNull();
     });
@@ -56,14 +56,14 @@ describe("normalizarE164", () => {
    * prefijo cero: sería un número inválido que además parece válido.
    */
   it("convierte el 00 internacional en +", () => {
-    expect(normalizarE164("0034662552851")).toBe(ESPERADO);
+    expect(normalizarE164("0034600000000")).toBe(ESPERADO);
     expect(normalizarE164("00393331234567")).toBe("+393331234567");
   });
 });
 
 describe("normalizarE164OFallar", () => {
   it("devuelve el número cuando es válido", () => {
-    expect(normalizarE164OFallar("34662552851")).toBe(ESPERADO);
+    expect(normalizarE164OFallar("34600000000")).toBe(ESPERADO);
   });
 
   /*

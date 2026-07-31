@@ -10,7 +10,7 @@ function eventoDe(cambios: Record<string, unknown> = {}, mensaje: Record<string,
     createTime: "2026-07-31T10:00:00.000Z",
     whatsappInboundMessage: {
       wamid: "wamid.HBgL",
-      from: "34662552851",
+      from: "34600000000",
       to: "34600111222",
       type: "text",
       text: { body: "Hola, ¿tenéis cita esta semana?" },
@@ -30,7 +30,7 @@ describe("parsearEntrante", () => {
       mensaje: {
         eventoId: "evt_abc123",
         wamid: "wamid.HBgL",
-        de: "+34662552851",
+        de: "+34600000000",
         para: "+34600111222",
         tipo: "text",
         texto: "Hola, ¿tenéis cita esta semana?",
