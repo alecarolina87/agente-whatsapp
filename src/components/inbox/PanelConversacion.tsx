@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 
 import { alternarIA, enviarComoHumano, marcarLeida } from "@/app/app/inbox/acciones";
 import { createClient } from "@/lib/supabase/client";
-import type { HiloConversacion } from "@/lib/data/inbox";
+import type { HiloConversacion } from "@/lib/data/inbox-tipos";
 
 import { EstadoVentana } from "./EstadoVentana";
 

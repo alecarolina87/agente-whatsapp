@@ -1,6 +1,12 @@
 import "server-only";
 
+import type {
+  ConversacionListada,
+  HiloConversacion,
+} from "@/lib/data/inbox-tipos";
 import { createClient } from "@/lib/supabase/server";
+
+export type * from "@/lib/data/inbox-tipos";
 
 /**
  * Lecturas del inbox.
@@ -19,17 +25,6 @@ import { createClient } from "@/lib/supabase/server";
  * Usar la clave de servicio para pintar una pantalla sería tirar por la borda
  * la protección que se construyó en F0.
  */
-
-export type ConversacionListada = {
-  id: string;
-  estado: string;
-  iaActiva: boolean;
-  sinLeer: number;
-  ultimoMensajeEn: string | null;
-  ventanaCaducaEn: string | null;
-  contacto: { nombre: string | null; telefono: string };
-  ultimoTexto: string | null;
-};
 
 type FilaLista = {
   id: string;
@@ -98,25 +93,6 @@ export async function listarConversaciones(
     ultimoTexto: textoPorConversacion.get(c.id) ?? null,
   }));
 }
-
-export type MensajeDelHilo = {
-  id: string;
-  direccion: "in" | "out";
-  quien: string;
-  texto: string | null;
-  tipo: string;
-  estado: string;
-  creadoEn: string;
-};
-
-export type HiloConversacion = {
-  id: string;
-  estado: string;
-  iaActiva: boolean;
-  ventanaCaducaEn: string | null;
-  contacto: { nombre: string | null; telefono: string };
-  mensajes: MensajeDelHilo[];
-};
 
 /** Una conversación con su historial completo. */
 export async function cargarHilo(
