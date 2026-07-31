@@ -1,0 +1,168 @@
+import { z } from "zod";
+
+import { normalizarE164 } from "./normalize";
+
+/**
+ * Forma de los eventos que envía YCloud, y traducción a lo que entiende
+ * nuestro esquema.
+ *
+ * El contrato está documentado en `SPIKE-ycloud.md` §2 y verificado contra una
+ * integración en funcionamiento.
+ */
+
+/** Único tipo de evento que procesa F1. */
+export const EVENTO_MENSAJE_ENTRANTE = "whatsapp.inbound_message.received";
+
+/**
+ * Valores que admite `msg_type_enum` en la base de datos.
+ *
+ * Escritos aquí a mano y no importados: si alguien añade un valor al enum de
+ * Postgres sin tocar esta lista, el mapeo de abajo lo delata en un test en vez
+ * de fallar en producción con un `22P02`.
+ */
+export const TIPOS_MENSAJE = [
+  "text",
+  "audio",
+  "image",
+  "document",
+  "video",
+  "template",
+  "interactive",
+  "system",
+] as const;
+
+export type TipoMensaje = (typeof TIPOS_MENSAJE)[number];
+
+/**
+ * De los tipos de WhatsApp a los nuestros.
+ *
+ * No es una tabla de equivalencias burocrática: WhatsApp tiene tipos que
+ * nuestro enum no contempla, y un valor fuera del enum hace que el `insert`
+ * falle y el mensaje del cliente **se pierda**. Preferimos guardarlo con el
+ * tipo más parecido que perderlo.
+ */
+const EQUIVALENCIAS: Record<string, TipoMensaje> = {
+  text: "text",
+  audio: "audio",
+  voice: "audio", // las notas de voz de WhatsApp llegan como `voice`
+  image: "image",
+  sticker: "image", // un sticker es una imagen; el enum no tiene sticker
+  document: "document",
+  video: "video",
+  template: "template",
+  interactive: "interactive",
+  button: "interactive", // respuesta a un botón
+  list_reply: "interactive",
+  system: "system",
+};
+
+export function traducirTipo(tipoYCloud: string | undefined): TipoMensaje {
+  if (!tipoYCloud) return "text";
+  return EQUIVALENCIAS[tipoYCloud] ?? "text";
+}
+
+/** Tipos que traen adjunto en lugar de texto. */
+const CON_ADJUNTO = new Set(["audio", "voice", "image", "sticker", "document", "video"]);
+
+/**
+ * Esquema del evento. Solo se declara lo que F1 necesita; el resto de campos
+ * que manda YCloud se ignoran sin fallar, porque un proveedor puede añadir
+ * campos nuevos en cualquier momento y eso no debe romper el webhook.
+ */
+const esquemaEvento = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1),
+  createTime: z.string().optional(),
+  whatsappInboundMessage: z
+    .object({
+      wamid: z.string().min(1),
+      from: z.string().min(1),
+      to: z.string().min(1),
+      type: z.string().optional(),
+      text: z.object({ body: z.string() }).partial().optional(),
+      customerProfile: z.object({ name: z.string() }).partial().optional(),
+    })
+    .optional(),
+});
+
+export type MensajeEntrante = {
+  /** Identificador del evento. Es la clave de la deduplicación. */
+  eventoId: string;
+  /** Identificador del mensaje en Meta. Va a `messages.wamid`. */
+  wamid: string;
+  /** Quién escribe, en E.164. */
+  de: string;
+  /** A qué número de la tienda escribe, en E.164. */
+  para: string;
+  tipo: TipoMensaje;
+  /** El texto, o `null` si el mensaje era un adjunto. */
+  texto: string | null;
+  nombreContacto: string | null;
+  /** Momento del evento en ISO. */
+  creadoEn: string;
+};
+
+/**
+ * Resultado de mirar un evento.
+ *
+ * Se distingue "esto no es para mí" de "esto viene roto": lo primero es normal
+ * —YCloud manda también eventos de estado de entrega— y merece un `200`. Lo
+ * segundo hay que registrarlo, porque significa que el contrato ha cambiado.
+ */
+export type ResultadoParseo =
+  | { clase: "mensaje"; mensaje: MensajeEntrante }
+  | { clase: "ignorado"; motivo: string }
+  | { clase: "malformado"; motivo: string };
+
+export function parsearEntrante(cuerpo: unknown): ResultadoParseo {
+  const evento = esquemaEvento.safeParse(cuerpo);
+  if (!evento.success) {
+    return { clase: "malformado", motivo: "el evento no tiene la forma esperada" };
+  }
+
+  const { id, type, createTime, whatsappInboundMessage: wim } = evento.data;
+
+  /*
+   * Los ecos son los mensajes que hemos enviado nosotros, devueltos por YCloud.
+   * Procesarlos haría que el agente se contestara a sí mismo, y cada vuelta
+   * costaría una llamada al modelo. Es el freno principal contra el bucle.
+   */
+  if (type.includes("echo")) {
+    return { clase: "ignorado", motivo: "eco de un mensaje saliente" };
+  }
+
+  // YCloud manda también eventos de estado (enviado, entregado, leído). En F1
+  // no se usan; llegarán en F2 para actualizar `messages.status`.
+  if (type !== EVENTO_MENSAJE_ENTRANTE) {
+    return { clase: "ignorado", motivo: `tipo de evento no tratado: ${type}` };
+  }
+
+  if (!wim) {
+    return { clase: "malformado", motivo: "falta whatsappInboundMessage" };
+  }
+
+  const de = normalizarE164(wim.from);
+  const para = normalizarE164(wim.to);
+
+  // Sin remitente normalizable no se sabe de quién es el mensaje, y guardarlo
+  // ensuciaría la bandeja con un contacto imposible de identificar.
+  if (!de) return { clase: "malformado", motivo: `remitente no normalizable: ${wim.from}` };
+  if (!para) return { clase: "malformado", motivo: `destinatario no normalizable: ${wim.to}` };
+
+  const tipoCrudo = wim.type ?? "text";
+  const texto = CON_ADJUNTO.has(tipoCrudo) ? null : (wim.text?.body ?? null);
+
+  return {
+    clase: "mensaje",
+    mensaje: {
+      eventoId: id,
+      wamid: wim.wamid,
+      de,
+      para,
+      tipo: traducirTipo(tipoCrudo),
+      texto,
+      nombreContacto: wim.customerProfile?.name ?? null,
+      creadoEn: createTime ?? new Date().toISOString(),
+    },
+  };
+}

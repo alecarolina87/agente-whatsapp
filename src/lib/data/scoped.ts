@@ -73,9 +73,29 @@ export function scoped(workspaceId: string) {
       const columna = tabla === "workspaces" ? "id" : "workspace_id";
 
       return {
-        /** SELECT con el workspace ya filtrado. */
-        select(columnas = "*") {
-          return db.from(tabla).select(columnas).eq(columna, ws);
+        /**
+         * SELECT con el workspace ya filtrado.
+         *
+         * `opciones` existe para `{ count: "exact", head: true }`, que es como
+         * se cuentan filas sin traérselas.
+         *
+         * ## Sobre los tipos
+         *
+         * El proyecto no genera los tipos del esquema de Supabase, así que el
+         * cliente no sabe qué columnas tiene cada tabla y devuelve un tipo
+         * inservible. La forma esperada se declara **al final de la cadena**
+         * con `.overrideTypes<Fila[], { merge: false }>()`, porque ese método
+         * cierra la consulta y no deja seguir encadenando `.eq()` ni `.limit()`.
+         *
+         * No es una comprobación real contra la base de datos —eso lo darían
+         * los tipos generados, pendientes— pero hace que un cambio de nombre de
+         * columna salte donde se usa.
+         */
+        select(
+          columnas = "*",
+          opciones?: { count?: "exact" | "planned" | "estimated"; head?: boolean },
+        ) {
+          return db.from(tabla).select(columnas, opciones).eq(columna, ws);
         },
 
         /** INSERT con el workspace_id inyectado en cada fila. */
@@ -85,6 +105,29 @@ export function scoped(workspaceId: string) {
             ...(tabla === "workspaces" ? {} : { workspace_id: ws }),
           }));
           return db.from(tabla).insert(conScope).select();
+        },
+
+        /**
+         * UPSERT con el workspace_id inyectado, igual que `insert`.
+         *
+         * Existe porque el webhook lo necesita: cada mensaje entrante trae un
+         * contacto que puede ser nuevo o no, y resolverlo con "consulta y si no
+         * existe inserta" abre una carrera — dos mensajes seguidos de la misma
+         * persona pasarían los dos la comprobación y chocarían contra
+         * `unique (workspace_id, wa_phone)`.
+         *
+         * `onConflict` tiene que nombrar las columnas del índice único, no
+         * incluye `workspace_id` automáticamente: quien llama lo pasa entero.
+         */
+        upsert<T extends Record<string, unknown>>(
+          filas: T | T[],
+          opciones: { onConflict: string; ignoreDuplicates?: boolean },
+        ) {
+          const conScope = (Array.isArray(filas) ? filas : [filas]).map((f) => ({
+            ...f,
+            ...(tabla === "workspaces" ? {} : { workspace_id: ws }),
+          }));
+          return db.from(tabla).upsert(conScope, opciones).select();
         },
 
         /** UPDATE limitado al workspace. */

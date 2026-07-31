@@ -86,8 +86,18 @@ event.type  ===  "whatsapp.inbound_message.received"
 
 ## 2.b Una URL de webhook por workspace
 
-**Cada workspace tiene su propia URL de webhook, con su identificador dentro**
-(`.../api/webhooks/ycloud?wsid={workspaceId}` o equivalente en la ruta).
+**Cada workspace tiene su propia URL de webhook, con su identificador dentro.**
+
+**Decidido en F1: el identificador va en la ruta, no en la query.**
+
+```
+/api/webhooks/ycloud/{workspaceId}
+```
+
+Es la forma que ya figuraba en la estructura de carpetas del blueprint §17, y
+además evita un problema práctico de este equipo: PowerShell parte los
+argumentos nativos por el `=`, así que una URL con `?wsid=…` se rompe al pegarla
+en un comando.
 
 No es un adorno: **es lo que permite verificar la firma.** Cuando llega una
 petición hay que saber con qué secreto comprobarla, y ese secreto es distinto
@@ -101,6 +111,22 @@ falsificar una firma válida, porque no tiene el secreto. El identificador dice
 
 La alternativa —un único secreto para todos los workspaces— se descarta: la
 fuga del secreto de un cliente comprometería a todos.
+
+### Un secreto por workspace, no por canal
+
+Hay un segundo círculo, un nivel más abajo, que apareció al implementar F1:
+`webhook_secret_ref` vive en `channels`, y si un workspace tuviera dos canales
+con secretos distintos, tampoco habría forma de saber cuál usar sin leer el
+cuerpo.
+
+Se cierra con el modelo real (§4): **cada cliente tiene una cuenta de YCloud, y
+una cuenta configura un webhook con un secreto**. Un workspace = una cuenta = un
+secreto. El webhook toma el del único canal activo del workspace y, si
+encuentra más de uno, devuelve `409` en vez de adivinar.
+
+**Deuda anotada:** por coherencia, `webhook_secret_ref` debería estar en
+`workspaces` y no en `channels`. No se mueve todavía porque implica migración y
+no bloquea nada.
 
 ## 3. Qué implica para el diseño ya escrito
 

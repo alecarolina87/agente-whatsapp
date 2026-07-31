@@ -7,6 +7,11 @@ export default defineConfig({
     // en serie: si crearan workspaces a la vez se pisarían entre ellos.
     fileParallelism: false,
     testTimeout: 30_000,
+
+    // Carga `.env.local` antes de cada archivo. Next.js lo hace solo, pero
+    // vitest corre fuera de Next y sin esto los tests de aislamiento no
+    // encuentran las claves de Supabase y ni siquiera arrancan.
+    setupFiles: ["./src/test/entorno.ts"],
   },
   resolve: {
     alias: {
