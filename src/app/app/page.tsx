@@ -1,13 +1,19 @@
 import Link from "next/link";
 
+import { PanelDeControl } from "@/components/PanelDeControl";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Inicio · Agente de WhatsApp" };
 
-/**
- * Portada del área privada. De momento solo confirma que la sesión funciona y
- * muestra el estado de F0; el inbox llega en F1.
- */
+type FilaWorkspace = {
+  id: string;
+  name: string;
+  slug: string;
+  ia_activa: boolean;
+  tope_mensual_usd: number | null;
+};
+
+/** Portada del área privada: el estado del agente y el acceso al inbox. */
 export default async function PaginaApp() {
   const supabase = await createClient();
   const {
@@ -19,12 +25,21 @@ export default async function PaginaApp() {
   // pertenece a ninguno — el alta llega con el onboarding.
   const { data: workspaces } = await supabase
     .from("workspaces")
-    .select("id, name, slug");
+    .select("id, name, slug, ia_activa, tope_mensual_usd")
+    .overrideTypes<FilaWorkspace[], { merge: false }>();
+
+  const principal = workspaces?.[0];
+
+  // El gasto lo suma Postgres. Traerse todos los mensajes del mes para sumarlos
+  // aquí funcionaría hoy, con cuatro, y dejaría de funcionar con cuatro mil.
+  const { data: gastado } = principal
+    ? await supabase.rpc("gasto_del_mes", { p_workspace_id: principal.id })
+    : { data: 0 };
 
   const fases = [
     { id: "F0", nombre: "Foundations", hecho: true },
     { id: "F1", nombre: "MVP: mensaje real → respuesta de IA", hecho: true },
-    { id: "F2", nombre: "Inbox en tiempo real y toggle IA/humano", hecho: false },
+    { id: "F2", nombre: "Inbox en vivo, frenos de gasto", hecho: true },
     { id: "F3", nombre: "Handoff a humano", hecho: false },
   ];
 
@@ -38,6 +53,16 @@ export default async function PaginaApp() {
           Entraste como <span className="dato text-foreground">{user?.email}</span>
         </p>
       </div>
+
+      {principal && (
+        <PanelDeControl
+          workspaceId={principal.id}
+          nombre={principal.name}
+          iaActiva={principal.ia_activa}
+          gastado={Number(gastado ?? 0)}
+          tope={principal.tope_mensual_usd}
+        />
+      )}
 
       <Link
         href="/app/inbox"
