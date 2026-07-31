@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Inicio · Agente de WhatsApp" };
@@ -21,8 +23,8 @@ export default async function PaginaApp() {
 
   const fases = [
     { id: "F0", nombre: "Foundations", hecho: true },
-    { id: "F1", nombre: "MVP: mensaje real → respuesta de IA", hecho: false },
-    { id: "F2", nombre: "Buffer inteligente", hecho: false },
+    { id: "F1", nombre: "MVP: mensaje real → respuesta de IA", hecho: true },
+    { id: "F2", nombre: "Inbox en tiempo real y toggle IA/humano", hecho: false },
     { id: "F3", nombre: "Handoff a humano", hecho: false },
   ];
 
@@ -36,6 +38,19 @@ export default async function PaginaApp() {
           Entraste como <span className="dato text-foreground">{user?.email}</span>
         </p>
       </div>
+
+      <Link
+        href="/app/inbox"
+        className="flex items-center justify-between rounded-[var(--radius-card)] border border-primary/40 bg-primary/10 px-6 py-5 transition hover:bg-primary/15"
+      >
+        <span>
+          <span className="block text-sm font-medium">Inbox</span>
+          <span className="block text-sm text-muted-foreground">
+            Las conversaciones, en vivo
+          </span>
+        </span>
+        <span className="text-primary">→</span>
+      </Link>
 
       <section className="rounded-[var(--radius-card)] border border-border bg-card/60 p-6">
         <h2 className="text-sm font-semibold tracking-[0.14em] text-muted-foreground uppercase">
