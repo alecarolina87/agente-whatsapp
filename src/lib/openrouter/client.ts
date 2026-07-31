@@ -35,7 +35,19 @@ export type RespuestaModelo = {
   texto: string;
   modelo: string;
   /** Lo que se guarda en `messages.cost` para poder medir el gasto. */
-  uso: { entrada: number; salida: number };
+  uso: {
+    entrada: number;
+    salida: number;
+    /**
+     * Lo que ha costado esta llamada, en dólares, según OpenRouter.
+     *
+     * `null` si no lo devuelve. Se pide expresamente con
+     * `usage: { include: true }`, y se guarda el número que da el proveedor en
+     * vez de calcularlo con una tabla de precios propia: los precios cambian, y
+     * una tabla desactualizada da un tope que no frena nada.
+     */
+    costeUsd: number | null;
+  };
 };
 
 export class ErrorOpenRouter extends Error {
@@ -83,6 +95,12 @@ export async function completarChat({
          * lo que permite firmar un DPA con un cliente sin mentir.
          */
         provider: { data_collection: "deny" },
+        /*
+         * Que nos diga lo que ha costado. Sin esto habría que mantener una
+         * tabla de precios por modelo, y un tope de gasto calculado con precios
+         * viejos no frena nada: deja pasar de largo o corta antes de tiempo.
+         */
+        usage: { include: true },
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -103,7 +121,7 @@ export async function completarChat({
   const datos = (await respuesta.json().catch(() => null)) as {
     model?: string;
     choices?: { message?: { content?: string } }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
+    usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
   } | null;
 
   const texto = datos?.choices?.[0]?.message?.content?.trim();
@@ -122,6 +140,7 @@ export async function completarChat({
     uso: {
       entrada: datos?.usage?.prompt_tokens ?? 0,
       salida: datos?.usage?.completion_tokens ?? 0,
+      costeUsd: typeof datos?.usage?.cost === "number" ? datos.usage.cost : null,
     },
   };
 }

@@ -6,6 +6,7 @@ import { leerSecreto } from "@/lib/vault";
 import { enviarTexto } from "@/lib/ycloud/client";
 
 import { puedeEnviarTextoLibre, superaLimiteDeMensajes } from "./guardrails";
+import { comprobarLimites, explicarFreno } from "./limites";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "./prompt";
 
 /**
@@ -132,7 +133,23 @@ export async function responderConversacion({
     return abstenerse("limite_de_mensajes", { total: totalMensajes });
   }
 
-  // ── 6. El modelo ──────────────────────────────────────────────────────────
+  /*
+   * ── 6. Frenos de gasto ────────────────────────────────────────────────────
+   *
+   * Va justo antes de llamar al modelo, que es el último momento en que sirve
+   * de algo: un céntimo después, ya está gastado. Y después de cargar el
+   * historial a propósito, porque leer de la base de datos es gratis y llamar
+   * al modelo no.
+   */
+  const limites = await comprobarLimites({ workspaceId, conversacionId });
+  if (!limites.permitido) {
+    return abstenerse(limites.motivo, {
+      ...limites.detalle,
+      explicacion: explicarFreno(limites.motivo),
+    });
+  }
+
+  // ── 7. El modelo ──────────────────────────────────────────────────────────
   const apiKeyModelo = process.env.OPENROUTER_API_KEY;
   const modelo = process.env.OPENROUTER_DEFAULT_MODEL;
   if (!apiKeyModelo || !modelo) {
@@ -155,7 +172,7 @@ export async function responderConversacion({
     return { clase: "error", motivo };
   }
 
-  // ── 7. El envío ───────────────────────────────────────────────────────────
+  // ── 8. El envío ───────────────────────────────────────────────────────────
   const apiKeyYCloud = await leerSecreto(canal.ycloud_credential_ref);
   if (!apiKeyYCloud) {
     await registrar("ai.failed", { fase: "credenciales", motivo: "canal sin clave de YCloud" });
@@ -181,7 +198,7 @@ export async function responderConversacion({
     return { clase: "error", motivo };
   }
 
-  // ── 8. Dejar constancia ───────────────────────────────────────────────────
+  // ── 9. Dejar constancia ───────────────────────────────────────────────────
   const ahora = new Date().toISOString();
 
   await db.from("messages").insert({
@@ -196,6 +213,9 @@ export async function responderConversacion({
       modelo: respuesta.modelo,
       tokens_entrada: respuesta.uso.entrada,
       tokens_salida: respuesta.uso.salida,
+      // El nombre lo lee  en SQL: si cambia aquí, hay que
+      // cambiarlo también en la migración o el tope dejaría de contar.
+      coste_usd: respuesta.uso.costeUsd,
     },
   });
 
@@ -211,6 +231,7 @@ export async function responderConversacion({
     modelo: respuesta.modelo,
     tokens_entrada: respuesta.uso.entrada,
     tokens_salida: respuesta.uso.salida,
+    coste_usd: respuesta.uso.costeUsd,
     recortado: envio.recortado,
   });
 
