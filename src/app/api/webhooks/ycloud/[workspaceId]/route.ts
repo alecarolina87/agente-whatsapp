@@ -1,6 +1,4 @@
-import { after } from "next/server";
-
-import { responderConversacion } from "@/lib/agent/runtime";
+import { encolarEnLote } from "@/lib/agent/buffer";
 import { calcularCaducidadVentana } from "@/lib/agent/guardrails";
 import { scoped } from "@/lib/data/scoped";
 import { leerSecreto } from "@/lib/vault";
@@ -12,7 +10,7 @@ import { verificarFirma } from "@/lib/ycloud/verify";
  *
  * ## El orden importa y no es negociable (BLUEPRINT §14, paso 3)
  *
- *   cuerpo crudo → firma → dedupe → persistir → ACK <2 s → trabajo en after()
+ *   cuerpo crudo → firma → dedupe → persistir → al buffer → ACK <2 s
  *
  * Cada paso está donde está por una razón concreta, explicada en su sitio.
  *
@@ -255,6 +253,27 @@ export async function POST(
       .eq("id", conversacionId);
   }
 
+  /*
+   * PASO 6 · Al buffer, no a responder.
+   *
+   * La gente escribe a trozos: "hola", "oye", "una pregunta" en diez segundos.
+   * Responder a cada uno serían tres respuestas y tres llamadas al modelo. En
+   * vez de eso, el mensaje entra en un lote que retrasa la respuesta unos
+   * segundos; si llega otro, el reloj se reinicia. Contesta el barrido de
+   * `/api/internal/flush` cuando el silencio se cumple.
+   */
+  const { data: ajustes } = await db
+    .from("workspaces")
+    .select("buffer_segundos")
+    .maybeSingle()
+    .overrideTypes<{ buffer_segundos: number }, { merge: false }>();
+
+  const loteId = await encolarEnLote({
+    workspaceId,
+    conversacionId,
+    segundosDeEspera: ajustes?.buffer_segundos ?? 30,
+  });
+
   const { error: errorMensaje } = await db.from("messages").insert({
     conversation_id: conversacionId,
     direction: "in",
@@ -263,6 +282,7 @@ export async function POST(
     wamid: mensaje.wamid,
     sender: "contact",
     status: "delivered",
+    batch_id: loteId,
   });
 
   // 23505 aquí significa que este mismo mensaje ya estaba guardado: el evento
@@ -277,22 +297,6 @@ export async function POST(
     type: "message.received",
     actor: "contact",
     payload: { wamid: mensaje.wamid, tipo: mensaje.tipo, ms_hasta_ack: Date.now() - comenzado },
-  });
-
-  /*
-   * PASO 6 · Contestar ya, pensar después.
-   *
-   * `after()` corre cuando la respuesta ya ha salido. Llamar al modelo antes de
-   * contestar se llevaría diez segundos, YCloud daría el envío por fallido y lo
-   * reintentaría: el contacto recibiría la misma respuesta dos veces.
-   */
-  const idConversacion = conversacionId;
-  after(async () => {
-    try {
-      await responderConversacion({ workspaceId, conversacionId: idConversacion });
-    } catch (causa) {
-      console.error("[webhook] el agente falló después del ACK", causa);
-    }
   });
 
   return Response.json({ ok: true, ms: Date.now() - comenzado });

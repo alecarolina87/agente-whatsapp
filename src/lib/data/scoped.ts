@@ -42,6 +42,7 @@ const TABLAS_CON_WORKSPACE = [
   "contacts",
   "conversations",
   "messages",
+  "message_batches",
   "processed_events",
   "events",
 ] as const;

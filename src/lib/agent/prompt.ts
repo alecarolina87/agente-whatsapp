@@ -47,10 +47,13 @@ export type MensajeHistorial = {
 export function construirMensajes({
   promptDelCanal,
   historial,
+  cuantos = MENSAJES_DE_CONTEXTO,
 }: {
   promptDelCanal: string | null | undefined;
   /** De más antiguo a más reciente. */
   historial: MensajeHistorial[];
+  /** Cuántos mensajes recientes conservar. Lo fija cada cliente. */
+  cuantos?: number;
 }): Mensaje[] {
   const personalidad = promptDelCanal?.trim() || PROMPT_POR_DEFECTO;
 
@@ -58,7 +61,7 @@ export function construirMensajes({
     { role: "system", content: `${personalidad}\n\n${REGLAS_DE_LA_PLATAFORMA}` },
   ];
 
-  for (const m of historial.slice(-MENSAJES_DE_CONTEXTO)) {
+  for (const m of historial.slice(-cuantos)) {
     const contenido = m.text?.trim();
 
     // Los adjuntos llegan sin texto. Pasarlos como mensaje vacío confunde al

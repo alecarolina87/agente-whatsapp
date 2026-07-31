@@ -111,6 +111,20 @@ export async function responderConversacion({
   if (!contacto) return { clase: "error", motivo: "contacto no encontrado" };
 
   // ── 4. El historial ───────────────────────────────────────────────────────
+  /*
+   * Cuánto contexto se le pasa al modelo lo decide cada cliente, no el código:
+   * un negocio con conversaciones largas necesita más memoria, y cada mensaje
+   * de contexto se paga **en cada respuesta**. Estaba fijo en 20 y era una
+   * decisión que no me correspondía tomar a mí.
+   */
+  const { data: ajustes } = await db
+    .from("workspaces")
+    .select("mensajes_de_contexto")
+    .maybeSingle()
+    .overrideTypes<{ mensajes_de_contexto: number }, { merge: false }>();
+
+  const cuantosRecordar = ajustes?.mensajes_de_contexto ?? MENSAJES_DE_CONTEXTO;
+
   // Se piden los más recientes y se les da la vuelta: pedirlos ascendentes
   // obligaría a traer la conversación entera para quedarse con el final.
   const { data: recientes } = await db
@@ -118,7 +132,7 @@ export async function responderConversacion({
     .select("direction, text, created_at")
     .eq("conversation_id", conversacionId)
     .order("created_at", { ascending: false })
-    .limit(MENSAJES_DE_CONTEXTO)
+    .limit(cuantosRecordar)
     .overrideTypes<FilaMensaje[], { merge: false }>();
 
   const historial = [...(recientes ?? [])].reverse();
@@ -164,6 +178,7 @@ export async function responderConversacion({
       mensajes: construirMensajes({
         promptDelCanal: canal.system_prompt,
         historial,
+        cuantos: cuantosRecordar,
       }),
     });
   } catch (causa) {
