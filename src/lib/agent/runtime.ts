@@ -19,7 +19,7 @@ import { MENSAJES_DE_CONTEXTO, construirMensajes } from "./prompt";
  */
 
 export type ResultadoRespuesta =
-  | { clase: "enviada"; wamid: string }
+  | { clase: "enviada"; wamid: string | null }
   | { clase: "abstenida"; motivo: string }
   | { clase: "error"; motivo: string };
 
@@ -206,6 +206,8 @@ export async function responderConversacion({
 
   await registrar("ai.replied", {
     wamid: envio.wamid,
+    ycloud_id: envio.id,
+    ycloud_status: envio.status,
     modelo: respuesta.modelo,
     tokens_entrada: respuesta.uso.entrada,
     tokens_salida: respuesta.uso.salida,

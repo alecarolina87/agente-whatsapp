@@ -34,9 +34,23 @@ Content-Type: application/json
 }
 ```
 
-La respuesta trae **`id`, `wamid` y `status`**. El `wamid` es el identificador
-de Meta y es el que se guarda en `messages.wamid` para la idempotencia de salida
-(BLUEPRINT §6.3).
+La respuesta trae **`id` y `status`**. El `id` es de YCloud y viene siempre.
+
+> **Corregido con la prueba en vivo del 31/07/2026.** Aquí decía que la
+> respuesta traía también `wamid`. **No lo trae.** Un envío correcto responde
+> `200` con `{"id": "...", "status": "accepted"}` y **sin `wamid`**: YCloud
+> acepta el mensaje y lo encola, y el identificador de Meta llega más tarde por
+> el evento `whatsapp.message.updated`.
+>
+> Costó dos envíos fallidos: el cliente exigía `wamid` y convertía un envío
+> correcto en un error. El mensaje llegaba al cliente pero no quedaba
+> registrado, que es la peor combinación posible.
+>
+> Consecuencia para el diseño: `messages.wamid` puede ser nulo en los
+> salientes hasta que llegue el evento de estado. El índice
+> `unique (workspace_id, wamid)` ya lo contempla, porque es parcial
+> (`where wamid is not null`). La idempotencia del saliente no depende de él:
+> la garantiza la deduplicación del evento entrante en `processed_events`.
 
 > Crear plantillas por API requiere `wabaId`, que no viene en los números. Si se
 > necesita, hay que obtenerlo aparte.
@@ -142,9 +156,14 @@ no bloquea nada.
 
 ## 4. Pendiente
 
-- [ ] **Prueba en vivo**: enviar y recibir un mensaje real con el número propio,
-      y guardar el JSON exacto del inbound. Lo documentado aquí sale de una
-      integración que funciona, pero el gate del §14 pide comprobarlo.
+- [x] ~~**Prueba en vivo**~~ **HECHA el 31/07/2026.** Mensaje real de WhatsApp
+      recibido y verificado de punta a punta: Meta → YCloud → túnel → firma
+      comprobada → guardado → ACK en **866 ms**. Respuesta del agente enviada y
+      recibida en el móvil.
+
+      Dos correcciones salieron de aquí y están arriba: **el `wamid` no viene**
+      en la respuesta de envío, y el identificador del workspace va **en la
+      ruta**, no en la query.
 - [x] ~~Facturación y sub-cuentas~~ **RESUELTO.** No hay sub-cuentas: **cada
       cliente tiene su propia cuenta de YCloud**, con su API Key y su webhook
       secret, y YCloud le factura a él directamente. Confirma el reparto del

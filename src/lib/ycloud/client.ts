@@ -22,9 +22,18 @@ export const LIMITE_TEXTO = 4096;
 const TIMEOUT_MS = 10_000;
 
 export type RespuestaEnvio = {
-  /** Identificador del mensaje en Meta. Va a `messages.wamid`. */
-  wamid: string;
-  /** Identificador interno de YCloud. */
+  /**
+   * Identificador del mensaje en Meta. Va a `messages.wamid`.
+   *
+   * **Puede venir `null`**, y no es un error. YCloud acepta el mensaje y lo
+   * encola; el identificador de Meta llega después, por el evento
+   * `whatsapp.message.updated`. Verificado en vivo el 31/07/2026: un envío
+   * correcto respondió `200` sin `wamid`.
+   *
+   * El `SPIKE-ycloud.md` decía que siempre venía. No es así.
+   */
+  wamid: string | null;
+  /** Identificador interno de YCloud. Este sí viene siempre. */
   id: string | null;
   status: string | null;
   /** `true` si el texto hubo que recortarlo para que Meta lo aceptara. */
@@ -105,18 +114,21 @@ export async function enviarTexto({
   } | null;
 
   /*
-   * Sin `wamid` no se puede rellenar `messages.wamid`, y ese es el campo del
-   * que depende `unique (workspace_id, wamid)` para que un reintento no cree
-   * un mensaje duplicado. Mejor fallar aquí que guardar algo a medias.
+   * No se exige `wamid`: YCloud acepta el mensaje y devuelve el suyo (`id`),
+   * mientras que el de Meta llega más tarde por `whatsapp.message.updated`.
+   *
+   * La primera versión tiraba un error aquí, y eso convertía un envío correcto
+   * en un fallo: el mensaje llegaba al cliente pero no quedaba registrado.
+   *
+   * La idempotencia del saliente no depende de esto: el `wamid` solo participa
+   * en el índice único, que además ignora los nulos. Lo que evita responder dos
+   * veces es la deduplicación del evento entrante en `processed_events`, que
+   * ocurre antes de llegar aquí.
    */
-  if (!datos?.wamid) {
-    throw new ErrorYCloud("YCloud aceptó el envío pero no devolvió wamid.", respuesta.status);
-  }
-
   return {
-    wamid: datos.wamid,
-    id: datos.id ?? null,
-    status: datos.status ?? null,
+    wamid: datos?.wamid ?? null,
+    id: datos?.id ?? null,
+    status: datos?.status ?? null,
     recortado,
   };
 }
