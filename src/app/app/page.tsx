@@ -36,11 +36,19 @@ export default async function PaginaApp() {
     ? await supabase.rpc("gasto_del_mes", { p_workspace_id: principal.id })
     : { data: 0 };
 
+  /* Las diez fases del BLUEPRINT §13. Se ven todas, hechas y por hacer: saber
+     cuánto falta es parte de saber dónde estás. */
   const fases = [
     { id: "F0", nombre: "Foundations", hecho: true },
     { id: "F1", nombre: "MVP: mensaje real → respuesta de IA", hecho: true },
-    { id: "F2", nombre: "Inbox en vivo, frenos de gasto", hecho: true },
-    { id: "F3", nombre: "Handoff a humano", hecho: false },
+    { id: "F2", nombre: "Buffer: agrupar mensajes seguidos", hecho: false },
+    { id: "F3", nombre: "Estados y handoff a humano", hecho: false },
+    { id: "F4", nombre: "Ventana de 24 h y plantillas", hecho: false },
+    { id: "F5", nombre: "Capa de tools", hecho: false },
+    { id: "F6", nombre: "HighLevel", hecho: false },
+    { id: "F7", nombre: "Setter y agenda", hecho: false },
+    { id: "F8", nombre: "Base de conocimiento y métricas", hecho: false },
+    { id: "F9", nombre: "Panel de agencia", hecho: false },
   ];
 
   return (
