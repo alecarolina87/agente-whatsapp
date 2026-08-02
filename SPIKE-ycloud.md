@@ -96,6 +96,30 @@ event.type  ===  "whatsapp.inbound_message.received"
 - **Hay que descartar los eventos de eco** (los que llevan `echo` en el tipo):
   son los mensajes salientes rebotados, y procesarlos duplicaría todo.
 
+### Cuánto se puede tardar en contestar
+
+Dato de la documentación de YCloud, no una suposición nuestra:
+
+| | |
+|---|---|
+| Recomendado | **por debajo de 6 s** |
+| A partir de 10 s | el endpoint se **desprioriza** |
+| Reintentos si falla | 10 s → 30 s → 5 min → 30 min → 1 h → 2 h → 2 h |
+
+**El blueprint pedía 2 s, y eso era más estricto que el proveedor.** Se corrige
+aquí porque hacía saltar la alarma con tiempos perfectamente normales y llevaba
+a optimizar contra un objetivo inventado.
+
+Medido: **866 ms** en la prueba en vivo del 31/07 (F1), y **~2,3 s** el 02/08 ya
+en Vercel, con el buffer, el handoff y los archivos añadidos. El webhook hace
+unas ocho consultas seguidas a Supabase y ahí se va el tiempo. Está dentro, y
+hay margen: si algún día se acercara a los 6 s, la salida es juntar el guardado
+—contacto, conversación, lote y mensaje— en **una sola función de Postgres**,
+que además lo haría atómico.
+
+Y aunque se pasara, el daño está acotado: el reintento choca contra el candado
+de `processed_events` y **nunca produce una segunda respuesta**.
+
 ---
 
 ## 2.b Una URL de webhook por workspace

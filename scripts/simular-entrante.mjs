@@ -98,6 +98,14 @@ const r = await fetch(url, {
   body: cuerpo,
 });
 
+/*
+ * El umbral es el de YCloud, no uno inventado: recomiendan contestar por
+ * debajo de 6 s, y a partir de 10 s despriorizan el endpoint. El blueprint
+ * decía 2 s, que era más estricto que el proveedor y hacía saltar la alarma
+ * con tiempos perfectamente normales.
+ */
 const ms = Date.now() - comenzado;
-console.log(`HTTP ${r.status} en ${ms} ms  ${ms < 2000 ? "✅ (por debajo de los 2 s)" : "⚠️  (por encima de los 2 s)"}`);
+const veredicto =
+  ms < 6000 ? "✅ (YCloud recomienda < 6 s)" : ms < 10_000 ? "⚠️  (lento, YCloud recomienda < 6 s)" : "❌ (> 10 s: YCloud despriorizará el endpoint)";
+console.log(`HTTP ${r.status} en ${ms} ms  ${veredicto}`);
 console.log(await r.text());
