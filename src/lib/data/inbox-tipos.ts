@@ -23,6 +23,24 @@ export type ConversacionListada = {
 };
 
 /**
+ * Si esta conversación está esperando a una persona.
+ *
+ * Son dos casos, y el segundo es el que se olvida:
+ *
+ * 1. El agente la traspasó —pidió ayuda, se la pidieron, o llegó una foto—.
+ * 2. La IA está apagada y hay mensajes sin leer. Aquí no hay ningún aviso que
+ *    salte: simplemente nadie va a contestar hasta que alguien entre. Es la
+ *    forma más silenciosa de dejar tirada a una clienta.
+ *
+ * Vive aquí, junto a los tipos, para que la lista y el contador de la pestaña
+ * cuenten exactamente lo mismo. Con dos definiciones, tarde o temprano una dice
+ * «3» y la otra «2», y entonces ya no te fías de ninguna.
+ */
+export function necesitaPersona(c: ConversacionListada): boolean {
+  return c.estado === "handoff_pending" || (!c.iaActiva && c.sinLeer > 0);
+}
+
+/**
  * El archivo de un mensaje, listo para pintar.
  *
  * La `url` viene ya firmada y caduca a la hora: el bucket es privado porque
