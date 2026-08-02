@@ -36,6 +36,7 @@ describe("parsearEntrante", () => {
         texto: "Hola, ¿tenéis cita esta semana?",
         nombreContacto: "Javier",
         creadoEn: "2026-07-31T10:00:00.000Z",
+        adjunto: null,
       },
     });
   });
@@ -89,12 +90,107 @@ describe("parsearEntrante", () => {
     });
   });
 
-  it("deja el texto en null cuando el mensaje es un adjunto", () => {
-    const resultado = parsearEntrante(eventoDe({}, { type: "image", text: undefined }));
+  describe("adjuntos", () => {
+    /*
+     * El caso real: una clienta manda una foto de sus cejas para que Ale las
+     * evalúe. Si el enlace no se extrae, la foto se pierde —los enlaces de
+     * YCloud caducan— y en la bandeja queda un mensaje vacío.
+     */
+    it("saca el enlace y el tipo de una imagen", () => {
+      const resultado = parsearEntrante(
+        eventoDe(
+          {},
+          {
+            type: "image",
+            text: undefined,
+            image: {
+              id: "media_123",
+              link: "https://api.ycloud.com/v2/whatsapp/media/media_123",
+              mimeType: "image/jpeg",
+            },
+          },
+        ),
+      );
 
-    expect(resultado).toMatchObject({
-      clase: "mensaje",
-      mensaje: { tipo: "image", texto: null },
+      expect(resultado).toMatchObject({
+        clase: "mensaje",
+        mensaje: {
+          tipo: "image",
+          adjunto: {
+            id: "media_123",
+            enlace: "https://api.ycloud.com/v2/whatsapp/media/media_123",
+            mime: "image/jpeg",
+            nombre: null,
+          },
+        },
+      });
+    });
+
+    /*
+     * El pie de foto suele ser la pregunta de verdad: «¿esto es normal?». Sin
+     * él, el agente contestaría a una imagen sin saber qué se le pregunta.
+     */
+    it("conserva el pie de foto como texto del mensaje", () => {
+      const resultado = parsearEntrante(
+        eventoDe(
+          {},
+          { type: "image", text: undefined, image: { link: "x", caption: "¿esto es normal?" } },
+        ),
+      );
+
+      expect(resultado).toMatchObject({
+        clase: "mensaje",
+        mensaje: { texto: "¿esto es normal?" },
+      });
+    });
+
+    it("guarda el nombre original de un documento", () => {
+      const resultado = parsearEntrante(
+        eventoDe({}, { type: "document", document: { link: "x", filename: "consentimiento.pdf" } }),
+      );
+
+      expect(resultado).toMatchObject({
+        clase: "mensaje",
+        mensaje: { tipo: "document", adjunto: { nombre: "consentimiento.pdf" } },
+      });
+    });
+
+    // YCloud escribe el MIME de las dos formas según el endpoint; se leen ambas.
+    it("acepta mime_type además de mimeType", () => {
+      const resultado = parsearEntrante(
+        eventoDe({}, { type: "audio", audio: { link: "x", mime_type: "audio/ogg" } }),
+      );
+
+      expect(resultado).toMatchObject({
+        clase: "mensaje",
+        mensaje: { tipo: "audio", adjunto: { mime: "audio/ogg" } },
+      });
+    });
+
+    /*
+     * Un adjunto sin enlace no se puede descargar, pero el mensaje sí se
+     * guarda: en la bandeja tiene que verse que la clienta mandó algo, aunque
+     * no se haya podido recuperar.
+     */
+    it("no se rompe si el adjunto viene sin enlace", () => {
+      const resultado = parsearEntrante(eventoDe({}, { type: "image", text: undefined }));
+
+      expect(resultado).toMatchObject({
+        clase: "mensaje",
+        mensaje: { tipo: "image", texto: null, adjunto: { enlace: null } },
+      });
+    });
+
+    // Un sticker se guarda como imagen, pero su adjunto vive bajo `sticker`.
+    it("encuentra el adjunto de un sticker aunque se guarde como imagen", () => {
+      const resultado = parsearEntrante(
+        eventoDe({}, { type: "sticker", text: undefined, sticker: { link: "https://s/1.webp" } }),
+      );
+
+      expect(resultado).toMatchObject({
+        clase: "mensaje",
+        mensaje: { tipo: "image", adjunto: { enlace: "https://s/1.webp" } },
+      });
     });
   });
 

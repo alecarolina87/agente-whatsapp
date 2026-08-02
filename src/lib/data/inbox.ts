@@ -5,6 +5,7 @@ import type {
   HiloConversacion,
 } from "@/lib/data/inbox-tipos";
 import { createClient } from "@/lib/supabase/server";
+import { urlFirmada, type MediaGuardada } from "@/lib/ycloud/media";
 
 export type * from "@/lib/data/inbox-tipos";
 
@@ -25,6 +26,14 @@ export type * from "@/lib/data/inbox-tipos";
  * Usar la clave de servicio para pintar una pantalla sería tirar por la borda
  * la protección que se construyó en F0.
  */
+
+/** Qué poner en el adelanto de la lista cuando el mensaje no tiene texto. */
+const ETIQUETA_SIN_TEXTO: Record<string, string> = {
+  image: "📷 Foto",
+  audio: "🎤 Nota de voz",
+  video: "🎥 Vídeo",
+  document: "📎 Documento",
+};
 
 type FilaLista = {
   id: string;
@@ -63,19 +72,27 @@ export async function listarConversaciones(
    */
   const { data: ultimos } = await supabase
     .from("messages")
-    .select("conversation_id, text, created_at")
+    .select("conversation_id, text, type, created_at")
     .in(
       "conversation_id",
       data.map((c) => c.id),
     )
     .order("created_at", { ascending: false })
     .limit(300)
-    .overrideTypes<{ conversation_id: string; text: string | null }[], { merge: false }>();
+    .overrideTypes<
+      { conversation_id: string; text: string | null; type: string }[],
+      { merge: false }
+    >();
 
   const textoPorConversacion = new Map<string, string | null>();
   for (const m of ultimos ?? []) {
     if (!textoPorConversacion.has(m.conversation_id)) {
-      textoPorConversacion.set(m.conversation_id, m.text);
+      /*
+       * Una foto sin pie no tiene texto, y dejar la fila en blanco haría que
+       * pareciera una conversación vacía justo cuando es la que más urge
+       * mirar. El adelanto dice qué llegó.
+       */
+      textoPorConversacion.set(m.conversation_id, m.text || ETIQUETA_SIN_TEXTO[m.type] || null);
     }
   }
 
@@ -124,7 +141,7 @@ export async function cargarHilo(
 
   const { data: mensajes } = await supabase
     .from("messages")
-    .select("id, direction, sender, text, type, status, created_at")
+    .select("id, direction, sender, text, type, status, media, created_at")
     .eq("conversation_id", conversacionId)
     .order("created_at", { ascending: true })
     .overrideTypes<
@@ -135,10 +152,29 @@ export async function cargarHilo(
         text: string | null;
         type: string;
         status: string;
+        media: MediaGuardada | null;
         created_at: string;
       }[],
       { merge: false }
     >();
+
+  /*
+   * Las URLs de los archivos se firman aquí, todas a la vez.
+   *
+   * Firmar con la clave de servicio dentro de una función que lee con la sesión
+   * del usuario parece una grieta, y no lo es: para llegar hasta aquí la
+   * consulta de arriba ya ha pasado por RLS, así que solo se firman rutas de
+   * mensajes que esta persona puede leer. El bucket no tiene ninguna política
+   * para `authenticated` justamente para que esta sea la única puerta.
+   */
+  const conArchivo = (mensajes ?? []).filter((m) => m.media?.ruta);
+  const firmadas = new Map(
+    await Promise.all(
+      conArchivo.map(
+        async (m) => [m.id, await urlFirmada(m.media!.ruta)] as const,
+      ),
+    ),
+  );
 
   return {
     id: conversacion.id,
@@ -157,6 +193,14 @@ export async function cargarHilo(
       tipo: m.type,
       estado: m.status,
       creadoEn: m.created_at,
+      media: m.media?.ruta
+        ? {
+            url: firmadas.get(m.id) ?? null,
+            mime: m.media.mime,
+            nombre: m.media.nombre,
+            bytes: m.media.bytes,
+          }
+        : null,
     })),
   };
 }

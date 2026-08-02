@@ -6,7 +6,7 @@ import { leerSecreto } from "@/lib/vault";
 import { enviarTexto } from "@/lib/ycloud/client";
 
 import { puedeEnviarTextoLibre, superaLimiteDeMensajes } from "./guardrails";
-import { evaluarHandoff, explicarHandoff } from "./handoff";
+import { evaluarHandoff, explicarHandoff, trajoArchivo, type MotivoHandoff } from "./handoff";
 import { comprobarLimites, explicarFreno } from "./limites";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "./prompt";
 
@@ -44,9 +44,15 @@ type FilaCanal = {
   phone_number: string;
   system_prompt: string | null;
   ycloud_credential_ref: string | null;
+  respuesta_a_archivos: string;
 };
 
-type FilaMensaje = { direction: "in" | "out"; text: string | null; created_at: string };
+type FilaMensaje = {
+  direction: "in" | "out";
+  type: string;
+  text: string | null;
+  created_at: string;
+};
 
 export async function responderConversacion({
   workspaceId,
@@ -69,6 +75,23 @@ export async function responderConversacion({
   const abstenerse = async (motivo: string, detalle: Record<string, unknown> = {}) => {
     await registrar("ai.abstained", { motivo, ...detalle });
     return { clase: "abstenida", motivo } as const;
+  };
+
+  /*
+   * Pasar la conversación a una persona: cambia de dueño y la IA se apaga.
+   *
+   * Se hace en cuanto se sabe, **antes de enviar nada**. Si se dejara para
+   * después del envío, un fallo de red o un tope de gasto dejaría la
+   * conversación marcada como automática cuando ya sabemos que necesita a
+   * alguien — y ahí se quedaría, sin que nadie la mirase.
+   */
+  const marcarHandoff = async (motivo: MotivoHandoff) => {
+    await db
+      .from("conversations")
+      .update({ state: "handoff_pending", ai_enabled: false })
+      .eq("id", conversacionId);
+
+    await registrar("handoff.requested", { motivo, explicacion: explicarHandoff(motivo) });
   };
 
   // ── 1. La conversación ────────────────────────────────────────────────────
@@ -95,7 +118,7 @@ export async function responderConversacion({
   // ── 3. El canal: personalidad y credenciales ──────────────────────────────
   const { data: canal } = await db
     .from("channels")
-    .select("id, phone_number, system_prompt, ycloud_credential_ref")
+    .select("id, phone_number, system_prompt, ycloud_credential_ref, respuesta_a_archivos")
     .eq("id", conversacion.channel_id)
     .maybeSingle()
     .overrideTypes<FilaCanal, { merge: false }>();
@@ -130,7 +153,7 @@ export async function responderConversacion({
   // obligaría a traer la conversación entera para quedarse con el final.
   const { data: recientes } = await db
     .from("messages")
-    .select("direction, text, created_at")
+    .select("direction, type, text, created_at")
     .eq("conversation_id", conversacionId)
     .order("created_at", { ascending: false })
     .limit(cuantosRecordar)
@@ -138,7 +161,26 @@ export async function responderConversacion({
 
   const historial = [...(recientes ?? [])].reverse();
 
-  // ── 5. Tope de mensajes ───────────────────────────────────────────────────
+  /*
+   * ── 5. ¿Ha llegado un archivo? ────────────────────────────────────────────
+   *
+   * Se mira lo que el agente **aún no ha contestado**: todo lo que hay después
+   * de su última respuesta. Mirar solo el último mensaje fallaría en el caso
+   * más normal —foto, y a los tres segundos «¿esto es normal?»—, donde el
+   * buffer junta los dos y el último es texto.
+   *
+   * Se marca el handoff aquí, antes de los topes de gasto, a propósito: si el
+   * gasto está al límite el agente se callará, pero la foto tiene que quedar
+   * señalada igual. Una foto sin contestar y sin marcar es una clienta
+   * esperando a alguien que no sabe que la está esperando.
+   */
+  const ultimaRespuesta = historial.map((m) => m.direction).lastIndexOf("out");
+  const sinContestar = historial.slice(ultimaRespuesta + 1);
+  const hayArchivo = sinContestar.some((m) => trajoArchivo(m.type));
+
+  if (hayArchivo) await marcarHandoff("llego_un_archivo");
+
+  // ── 6. Tope de mensajes ───────────────────────────────────────────────────
   const { count: totalMensajes } = await db
     .from("messages")
     .select("id", { count: "exact", head: true })
@@ -149,7 +191,7 @@ export async function responderConversacion({
   }
 
   /*
-   * ── 6. Frenos de gasto ────────────────────────────────────────────────────
+   * ── 7. Frenos de gasto ────────────────────────────────────────────────────
    *
    * Va justo antes de llamar al modelo, que es el último momento en que sirve
    * de algo: un céntimo después, ya está gastado. Y después de cargar el
@@ -164,46 +206,59 @@ export async function responderConversacion({
     });
   }
 
-  // ── 7. El modelo ──────────────────────────────────────────────────────────
-  const apiKeyModelo = process.env.OPENROUTER_API_KEY;
-  const modelo = process.env.OPENROUTER_DEFAULT_MODEL;
-  if (!apiKeyModelo || !modelo) {
-    return { clase: "error", motivo: "falta la configuración de OpenRouter" };
-  }
-
-  let respuesta;
-  try {
-    respuesta = await completarChat({
-      apiKey: apiKeyModelo,
-      modelo,
-      mensajes: construirMensajes({
-        promptDelCanal: canal.system_prompt,
-        historial,
-        cuantos: cuantosRecordar,
-      }),
-    });
-  } catch (causa) {
-    const motivo = causa instanceof Error ? causa.message : String(causa);
-    await registrar("ai.failed", { fase: "modelo", motivo });
-    return { clase: "error", motivo };
-  }
-
   /*
-   * ── 8. ¿Hace falta una persona? ───────────────────────────────────────────
+   * ── 8. La respuesta ───────────────────────────────────────────────────────
    *
-   * Se decide **antes de enviar**, porque la marca que pone el modelo no puede
-   * llegar al cliente bajo ningún concepto. `evaluarHandoff` devuelve siempre
-   * el texto ya limpio, haya handoff o no.
-   *
-   * La respuesta se envía igualmente: el cliente merece una despedida, no un
-   * silencio mientras espera a que alguien lea el aviso.
+   * Con un archivo por medio **no se llama al modelo**. No es un ahorro: es que
+   * el modelo no ha visto la foto, y lo que escribiera sobre ella se lo estaría
+   * inventando. Se manda el acuse del canal y la conversación ya va camino de
+   * una persona.
    */
-  const ultimoDelContacto = [...historial].reverse().find((m) => m.direction === "in")?.text;
+  let respuesta: Awaited<ReturnType<typeof completarChat>> | null = null;
+  let handoff: { texto: string; motivo: MotivoHandoff | null };
 
-  const handoff = evaluarHandoff({
-    respuestaDelModelo: respuesta.texto,
-    ultimoMensajeDelContacto: ultimoDelContacto,
-  });
+  if (hayArchivo) {
+    handoff = { texto: canal.respuesta_a_archivos, motivo: "llego_un_archivo" };
+  } else {
+    const apiKeyModelo = process.env.OPENROUTER_API_KEY;
+    const modelo = process.env.OPENROUTER_DEFAULT_MODEL;
+    if (!apiKeyModelo || !modelo) {
+      return { clase: "error", motivo: "falta la configuración de OpenRouter" };
+    }
+
+    try {
+      respuesta = await completarChat({
+        apiKey: apiKeyModelo,
+        modelo,
+        mensajes: construirMensajes({
+          promptDelCanal: canal.system_prompt,
+          historial,
+          cuantos: cuantosRecordar,
+        }),
+      });
+    } catch (causa) {
+      const motivo = causa instanceof Error ? causa.message : String(causa);
+      await registrar("ai.failed", { fase: "modelo", motivo });
+      return { clase: "error", motivo };
+    }
+
+    /*
+     * ¿Hace falta una persona? Se decide **antes de enviar**, porque la marca
+     * que pone el modelo no puede llegar al cliente bajo ningún concepto.
+     * `evaluarHandoff` devuelve siempre el texto ya limpio, haya handoff o no.
+     *
+     * La respuesta se envía igualmente: el cliente merece una despedida, no un
+     * silencio mientras espera a que alguien lea el aviso.
+     */
+    const ultimoDelContacto = [...historial].reverse().find((m) => m.direction === "in")?.text;
+
+    handoff = evaluarHandoff({
+      respuestaDelModelo: respuesta.texto,
+      ultimoMensajeDelContacto: ultimoDelContacto,
+    });
+
+    if (handoff.motivo) await marcarHandoff(handoff.motivo);
+  }
 
   // ── 9. El envío ───────────────────────────────────────────────────────────
   const apiKeyYCloud = await leerSecreto(canal.ycloud_credential_ref);
@@ -242,48 +297,36 @@ export async function responderConversacion({
     wamid: envio.wamid,
     sender: "ai",
     status: "sent",
-    cost: {
-      modelo: respuesta.modelo,
-      tokens_entrada: respuesta.uso.entrada,
-      tokens_salida: respuesta.uso.salida,
-      // El nombre lo lee  en SQL: si cambia aquí, hay que
-      // cambiarlo también en la migración o el tope dejaría de contar.
-      coste_usd: respuesta.uso.costeUsd,
-    },
+    // Sin llamada al modelo no hay coste que apuntar: el acuse de un archivo
+    // sale gratis, y ponerle un cero inventado ensuciaría el recuento.
+    cost: respuesta
+      ? {
+          modelo: respuesta.modelo,
+          tokens_entrada: respuesta.uso.entrada,
+          tokens_salida: respuesta.uso.salida,
+          // El nombre lo lee  en SQL: si cambia aquí, hay que
+          // cambiarlo también en la migración o el tope dejaría de contar.
+          coste_usd: respuesta.uso.costeUsd,
+        }
+      : null,
   });
 
-  /*
-   * Con handoff, la conversación cambia de dueño: pasa a 'handoff_pending' y la
-   * IA se apaga. Si siguiera activa, el próximo mensaje del cliente recibiría
-   * otra respuesta automática justo cuando acaba de pedir una persona — y eso
-   * es exactamente lo que hace que la gente pierda la paciencia con los bots.
-   */
+  // El estado de la conversación ya lo cambió `marcarHandoff` en cuanto se
+  // supo; aquí solo quedan las marcas de tiempo.
   await db
     .from("conversations")
-    .update({
-      last_outbound_at: ahora,
-      last_message_at: ahora,
-      ...(handoff.motivo
-        ? { state: "handoff_pending", ai_enabled: false }
-        : {}),
-    })
+    .update({ last_outbound_at: ahora, last_message_at: ahora })
     .eq("id", conversacionId);
-
-  if (handoff.motivo) {
-    await registrar("handoff.requested", {
-      motivo: handoff.motivo,
-      explicacion: explicarHandoff(handoff.motivo),
-    });
-  }
 
   await registrar("ai.replied", {
     wamid: envio.wamid,
     ycloud_id: envio.id,
     ycloud_status: envio.status,
-    modelo: respuesta.modelo,
-    tokens_entrada: respuesta.uso.entrada,
-    tokens_salida: respuesta.uso.salida,
-    coste_usd: respuesta.uso.costeUsd,
+    modelo: respuesta?.modelo ?? null,
+    tokens_entrada: respuesta?.uso.entrada ?? 0,
+    tokens_salida: respuesta?.uso.salida ?? 0,
+    coste_usd: respuesta?.uso.costeUsd ?? 0,
+    handoff: handoff.motivo,
     recortado: envio.recortado,
   });
 

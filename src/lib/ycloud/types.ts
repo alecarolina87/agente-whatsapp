@@ -69,21 +69,53 @@ const CON_ADJUNTO = new Set(["audio", "voice", "image", "sticker", "document", "
  * que manda YCloud se ignoran sin fallar, porque un proveedor puede añadir
  * campos nuevos en cualquier momento y eso no debe romper el webhook.
  */
+/**
+ * YCloud anida el adjunto bajo una clave con el nombre del tipo:
+ * `whatsappInboundMessage.image = { id, link, mimeType, caption }`. Y escribe
+ * el tipo MIME de dos formas según el caso, así que se leen las dos.
+ */
+const esquemaAdjunto = z
+  .object({
+    id: z.string(),
+    link: z.string(),
+    mimeType: z.string(),
+    mime_type: z.string(),
+    caption: z.string(),
+    filename: z.string(),
+  })
+  .partial();
+
 const esquemaEvento = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
   createTime: z.string().optional(),
   whatsappInboundMessage: z
-    .object({
+    .looseObject({
       wamid: z.string().min(1),
       from: z.string().min(1),
       to: z.string().min(1),
       type: z.string().optional(),
       text: z.object({ body: z.string() }).partial().optional(),
       customerProfile: z.object({ name: z.string() }).partial().optional(),
+      image: esquemaAdjunto.optional(),
+      audio: esquemaAdjunto.optional(),
+      voice: esquemaAdjunto.optional(),
+      video: esquemaAdjunto.optional(),
+      document: esquemaAdjunto.optional(),
+      sticker: esquemaAdjunto.optional(),
     })
     .optional(),
 });
+
+export type AdjuntoEntrante = {
+  /** Identificador del archivo en YCloud. */
+  id: string | null;
+  /** Enlace de descarga. Caduca, así que hay que bajarlo pronto. */
+  enlace: string | null;
+  mime: string | null;
+  /** Nombre original, solo en documentos. */
+  nombre: string | null;
+};
 
 export type MensajeEntrante = {
   /** Identificador del evento. Es la clave de la deduplicación. */
@@ -100,6 +132,8 @@ export type MensajeEntrante = {
   nombreContacto: string | null;
   /** Momento del evento en ISO. */
   creadoEn: string;
+  /** Datos del archivo, si el mensaje traía uno. */
+  adjunto: AdjuntoEntrante | null;
 };
 
 /**
@@ -150,7 +184,27 @@ export function parsearEntrante(cuerpo: unknown): ResultadoParseo {
   if (!para) return { clase: "malformado", motivo: `destinatario no normalizable: ${wim.to}` };
 
   const tipoCrudo = wim.type ?? "text";
-  const texto = CON_ADJUNTO.has(tipoCrudo) ? null : (wim.text?.body ?? null);
+  const traeAdjunto = CON_ADJUNTO.has(tipoCrudo);
+
+  /*
+   * El pie de foto sí es texto del contacto y se conserva: muchas veces es la
+   * pregunta de verdad —"¿esto es normal?"— y perderla dejaría al agente
+   * respondiendo a una imagen sin contexto.
+   */
+  const bloque = traeAdjunto
+    ? ((wim as Record<string, unknown>)[tipoCrudo] as Record<string, string> | undefined)
+    : undefined;
+
+  const texto = traeAdjunto ? (bloque?.caption ?? null) : (wim.text?.body ?? null);
+
+  const adjunto: AdjuntoEntrante | null = traeAdjunto
+    ? {
+        id: bloque?.id ?? null,
+        enlace: bloque?.link ?? null,
+        mime: bloque?.mimeType ?? bloque?.mime_type ?? null,
+        nombre: bloque?.filename ?? null,
+      }
+    : null;
 
   return {
     clase: "mensaje",
@@ -163,6 +217,7 @@ export function parsearEntrante(cuerpo: unknown): ResultadoParseo {
       texto,
       nombreContacto: wim.customerProfile?.name ?? null,
       creadoEn: createTime ?? new Date().toISOString(),
+      adjunto,
     },
   };
 }

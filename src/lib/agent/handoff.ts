@@ -26,7 +26,25 @@
 /** La marca que el modelo añade al final cuando necesita ayuda. */
 export const MARCA_HANDOFF = "[HANDOFF]";
 
-export type MotivoHandoff = "lo_pide_el_contacto" | "el_agente_se_rinde";
+export type MotivoHandoff = "lo_pide_el_contacto" | "el_agente_se_rinde" | "llego_un_archivo";
+
+/**
+ * Tipos de mensaje que llevan un archivo, y que por tanto pasan a una persona
+ * sin consultar al modelo.
+ *
+ * **El modelo no ve el archivo.** Si se le dejara responder, escribiría sobre
+ * una foto que no ha mirado. En el negocio de Ale eso es decirle a una clienta
+ * que su cicatrización «va perfecta» sin haberla visto — y eso no es un fallo
+ * de estilo, es un consejo sobre la piel de alguien inventado de cero.
+ *
+ * Cuando llegue un modelo con visión, esto pasará a ser una decisión por canal
+ * («¿quieres que el agente mire las fotos?»). Hoy la respuesta es no, siempre.
+ */
+const TIPOS_CON_ARCHIVO = new Set(["image", "audio", "video", "document"]);
+
+export function trajoArchivo(tipo: string | null | undefined): boolean {
+  return Boolean(tipo && TIPOS_CON_ARCHIVO.has(tipo));
+}
 
 export type ResultadoHandoff = {
   /** El texto ya sin la marca, listo para enviar. */
@@ -110,7 +128,11 @@ export function evaluarHandoff({
 
 /** Texto para la pantalla y para los logs. */
 export function explicarHandoff(motivo: MotivoHandoff): string {
-  return motivo === "lo_pide_el_contacto"
-    ? "El contacto pidió hablar con una persona."
-    : "El agente no supo continuar.";
+  const explicaciones: Record<MotivoHandoff, string> = {
+    lo_pide_el_contacto: "El contacto pidió hablar con una persona.",
+    el_agente_se_rinde: "El agente no supo continuar.",
+    llego_un_archivo: "El contacto envió un archivo y el agente no puede verlo.",
+  };
+
+  return explicaciones[motivo];
 }

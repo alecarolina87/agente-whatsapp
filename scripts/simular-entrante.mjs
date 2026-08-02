@@ -10,13 +10,22 @@
  * ejecuta esto ya tiene la clave de servicio de la base de datos.
  *
  * Uso:
- *   node --env-file=.env.local scripts/simular-entrante.mjs <urlBase> <workspaceId> <deQuien> ["texto"]
+ *   node --env-file=.env.local scripts/simular-entrante.mjs <urlBase> <workspaceId> <deQuien> ["texto"] [--imagen]
+ *
+ * Con `--imagen` manda una foto en lugar de texto (el "texto" pasa a ser el pie
+ * de foto). El enlace apunta a YCloud pero el archivo no existe, así que la
+ * descarga falla a propósito: lo que se comprueba es que el mensaje se guarda
+ * igual, que la conversación pasa a una persona y que un archivo irrecuperable
+ * no tumba el webhook. La descarga de verdad solo se puede probar con una foto
+ * real de WhatsApp.
  */
 import { createHmac, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
-const [urlBase, workspaceId, deQuien, texto = "Hola, ¿tenéis cita esta semana?"] =
-  process.argv.slice(2);
+const argumentos = process.argv.slice(2).filter((a) => a !== "--imagen");
+const esImagen = process.argv.includes("--imagen");
+
+const [urlBase, workspaceId, deQuien, texto = "Hola, ¿tenéis cita esta semana?"] = argumentos;
 
 if (!urlBase || !workspaceId || !deQuien) {
   console.error(
@@ -58,8 +67,17 @@ const cuerpo = JSON.stringify({
     wamid: `wamid.SIM.${randomUUID()}`,
     from: deQuien.replace(/^\+/, ""), // YCloud manda el número sin el +
     to: canal.phone_number.replace(/^\+/, ""),
-    type: "text",
-    text: { body: texto },
+    ...(esImagen
+      ? {
+          type: "image",
+          image: {
+            id: `media_sim_${randomUUID()}`,
+            link: `https://api.ycloud.com/v2/whatsapp/media/sim_${randomUUID()}`,
+            mimeType: "image/jpeg",
+            caption: texto,
+          },
+        }
+      : { type: "text", text: { body: texto } }),
     customerProfile: { name: "Prueba" },
   },
 });
@@ -69,7 +87,9 @@ const firma = createHmac("sha256", secreto).update(`${t}.${cuerpo}`).digest("hex
 
 const url = `${urlBase.replace(/\/$/, "")}/api/webhooks/ycloud/${workspaceId}`;
 console.log(`POST  ${url}`);
-console.log(`      de ${deQuien} para ${canal.phone_number}: "${texto}"\n`);
+console.log(
+  `      de ${deQuien} para ${canal.phone_number}: ${esImagen ? "📷 foto con pie" : ""} "${texto}"\n`,
+);
 
 const comenzado = Date.now();
 const r = await fetch(url, {

@@ -7,6 +7,7 @@ import { alternarIA, enviarComoHumano, marcarLeida } from "@/app/app/inbox/accio
 import { createClient } from "@/lib/supabase/client";
 import type { HiloConversacion } from "@/lib/data/inbox-tipos";
 
+import { Adjunto, esArchivo } from "./Adjunto";
 import { AvisoHandoff, EstadoVentana } from "./EstadoVentana";
 
 /**
@@ -143,7 +144,25 @@ export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
                   {m.quien === "ai" ? "IA" : "Tú"}
                 </p>
               )}
-              <p className="whitespace-pre-wrap">{m.texto ?? `[${m.tipo}]`}</p>
+              {/* `Adjunto` se encarga también del caso en que el archivo no se
+                  pudo recuperar: ahí avisa en vez de dejar la burbuja muda. */}
+              {esArchivo(m.tipo) && (
+                <div className="mb-1.5">
+                  <Adjunto tipo={m.tipo} media={m.media} />
+                </div>
+              )}
+
+              {/* El pie de foto va debajo del archivo, que es donde lo puso
+                  quien escribió. Un mensaje que no es archivo y no trae texto
+                  —una plantilla, un aviso del sistema— enseña su tipo: mejor
+                  «[system]» que una burbuja en blanco. */}
+              {m.texto ? (
+                <p className="whitespace-pre-wrap">{m.texto}</p>
+              ) : (
+                !esArchivo(m.tipo) && (
+                  <p className="dato text-xs text-muted-foreground">[{m.tipo}]</p>
+                )
+              )}
               <p className="dato mt-1 text-[11px] text-muted-foreground">
                 {new Date(m.creadoEn).toLocaleTimeString("es-ES", {
                   hour: "2-digit",

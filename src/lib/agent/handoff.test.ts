@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { MARCA_HANDOFF, evaluarHandoff, pideHablarConUnaPersona } from "./handoff";
+import {
+  MARCA_HANDOFF,
+  evaluarHandoff,
+  explicarHandoff,
+  pideHablarConUnaPersona,
+  trajoArchivo,
+} from "./handoff";
 
 describe("evaluarHandoff", () => {
   it("no pasa a nadie en una conversación normal", () => {
@@ -89,5 +95,33 @@ describe("pideHablarConUnaPersona", () => {
 
   it("funciona sin tildes", () => {
     expect(pideHablarConUnaPersona("pasame con alguien")).toBe(true);
+  });
+});
+
+/*
+ * La regla que protege a las clientas de Ale: el modelo no ve las fotos, así
+ * que un mensaje con archivo no llega nunca a él. Si esto dejara de saltar,
+ * el agente opinaría sobre una cicatrización que no ha mirado.
+ */
+describe("trajoArchivo", () => {
+  it.each(["image", "audio", "video", "document"])("pasa a una persona con: %s", (tipo) => {
+    expect(trajoArchivo(tipo)).toBe(true);
+  });
+
+  it.each(["text", "template", "interactive", "system", "", null, undefined])(
+    "no salta con: %s",
+    (tipo) => {
+      expect(trajoArchivo(tipo)).toBe(false);
+    },
+  );
+});
+
+describe("explicarHandoff", () => {
+  // Este texto acaba en la pantalla de Ale: tiene que decirle por qué le ha
+  // llegado la conversación, no un código interno.
+  it("explica los tres motivos en castellano", () => {
+    expect(explicarHandoff("lo_pide_el_contacto")).toContain("pidió");
+    expect(explicarHandoff("el_agente_se_rinde")).toContain("no supo");
+    expect(explicarHandoff("llego_un_archivo")).toContain("archivo");
   });
 });

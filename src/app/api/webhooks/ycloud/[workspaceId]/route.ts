@@ -1,7 +1,10 @@
+import { after } from "next/server";
+
 import { encolarEnLote } from "@/lib/agent/buffer";
 import { calcularCaducidadVentana } from "@/lib/agent/guardrails";
 import { scoped } from "@/lib/data/scoped";
 import { leerSecreto } from "@/lib/vault";
+import { guardarAdjunto } from "@/lib/ycloud/media";
 import { parsearEntrante } from "@/lib/ycloud/types";
 import { verificarFirma } from "@/lib/ycloud/verify";
 
@@ -29,7 +32,12 @@ import { verificarFirma } from "@/lib/ycloud/verify";
  * tipos del esquema de Supabase, esto es lo que hace que renombrar una columna
  * salte en este archivo y no en producción.
  */
-type FilaCanal = { id: string; phone_number: string; webhook_secret_ref: string | null };
+type FilaCanal = {
+  id: string;
+  phone_number: string;
+  webhook_secret_ref: string | null;
+  ycloud_credential_ref: string | null;
+};
 type FilaConId = { id: string };
 
 /** El motor del agente necesita Node, no el runtime de borde. */
@@ -64,6 +72,29 @@ export async function POST(
   }
 
   /*
+   * Los ajustes del workspace se piden ya, aunque no hagan falta hasta el final.
+   *
+   * Cada ida y vuelta a Supabase son unos 150 ms desde aquí, y el webhook hace
+   * una decena en fila: pedir esto en su turno añadía ese tiempo al acuse sin
+   * necesidad, porque no depende de nada de lo que viene antes. Se lanza ahora y
+   * se recoge cuando toque.
+   */
+  const ajustesPedidos = (async () => {
+    try {
+      const { data } = await db
+        .from("workspaces")
+        .select("buffer_segundos")
+        .maybeSingle()
+        .overrideTypes<{ buffer_segundos: number }, { merge: false }>();
+      return data;
+    } catch {
+      // Sin este `catch` un fallo de red aquí sería un rechazo sin dueño
+      // mientras el resto de la función sigue, y eso tumba el proceso en Node.
+      return null;
+    }
+  })();
+
+  /*
    * PASO 2 · El secreto de este workspace.
    *
    * Se toma del canal activo. Si hubiera más de uno no habría forma de saber
@@ -74,7 +105,7 @@ export async function POST(
    */
   const { data: canales } = await db
     .from("channels")
-    .select("id, phone_number, webhook_secret_ref")
+    .select("id, phone_number, webhook_secret_ref, ycloud_credential_ref")
     .eq("status", "active")
     .overrideTypes<FilaCanal[], { merge: false }>();
 
@@ -262,11 +293,7 @@ export async function POST(
    * segundos; si llega otro, el reloj se reinicia. Contesta el barrido de
    * `/api/internal/flush` cuando el silencio se cumple.
    */
-  const { data: ajustes } = await db
-    .from("workspaces")
-    .select("buffer_segundos")
-    .maybeSingle()
-    .overrideTypes<{ buffer_segundos: number }, { merge: false }>();
+  const ajustes = await ajustesPedidos;
 
   const loteId = await encolarEnLote({
     workspaceId,
@@ -274,7 +301,7 @@ export async function POST(
     segundosDeEspera: ajustes?.buffer_segundos ?? 30,
   });
 
-  const { error: errorMensaje } = await db.from("messages").insert({
+  const { data: guardados, error: errorMensaje } = await db.from("messages").insert({
     conversation_id: conversacionId,
     direction: "in",
     type: mensaje.tipo,
@@ -283,7 +310,7 @@ export async function POST(
     sender: "contact",
     status: "delivered",
     batch_id: loteId,
-  });
+  }).overrideTypes<FilaConId[], { merge: false }>();
 
   // 23505 aquí significa que este mismo mensaje ya estaba guardado: el evento
   // era nuevo pero el mensaje no. Se sigue igual; no es un fallo.
@@ -292,12 +319,74 @@ export async function POST(
     return new Response("error temporal", { status: 500 });
   }
 
-  await db.from("events").insert({
-    conversation_id: conversacionId,
-    type: "message.received",
-    actor: "contact",
-    payload: { wamid: mensaje.wamid, tipo: mensaje.tipo, ms_hasta_ack: Date.now() - comenzado },
+  /*
+   * El registro va después del acuse: es una anotación para nosotros, y hacer
+   * esperar a YCloud mientras se escribe un log no tiene ninguna defensa.
+   */
+  const msHastaAck = Date.now() - comenzado;
+
+  after(async () => {
+    await db.from("events").insert({
+      conversation_id: conversacionId,
+      type: "message.received",
+      actor: "contact",
+      payload: {
+        wamid: mensaje.wamid,
+        tipo: mensaje.tipo,
+        con_adjunto: Boolean(mensaje.adjunto),
+        ms_hasta_ack: msHastaAck,
+      },
+    });
   });
+
+  /*
+   * PASO 7 · El archivo, después de contestar.
+   *
+   * Bajar una foto puede tardar segundos, y el ACK tiene que salir en menos de
+   * dos o YCloud reintenta. Con `after()` el mensaje ya está guardado y la
+   * respuesta ya ha salido; el archivo se le añade encima.
+   *
+   * Que llegue tarde no rompe nada: el buffer espera su silencio antes de
+   * contestar, y el handoff automático por imagen depende del **tipo** del
+   * mensaje, que sí se guardó al instante.
+   */
+  const mensajeId = guardados?.[0]?.id;
+
+  if (mensaje.adjunto && mensajeId) {
+    after(async () => {
+      const apiKey = await leerSecreto(canal.ycloud_credential_ref);
+
+      if (!apiKey) {
+        console.warn(`[webhook] canal ${canal.id} sin credencial: no se baja el adjunto`);
+        return;
+      }
+
+      const resultado = await guardarAdjunto({
+        adjunto: mensaje.adjunto!,
+        apiKey,
+        workspaceId,
+        conversacionId,
+      });
+
+      if (!resultado.ok) {
+        /*
+         * El mensaje se queda sin archivo, pero visible en la bandeja: es
+         * preferible que Ale vea "mandó una foto que no pudimos recuperar" a
+         * que no vea nada y crea que la clienta no escribió.
+         */
+        console.error(`[webhook] adjunto no guardado: ${resultado.motivo}`);
+        await db.from("events").insert({
+          conversation_id: conversacionId,
+          type: "media.failed",
+          actor: "system",
+          payload: { motivo: resultado.motivo, mensaje_id: mensajeId },
+        });
+        return;
+      }
+
+      await db.from("messages").update({ media: resultado.media }).eq("id", mensajeId);
+    });
+  }
 
   return Response.json({ ok: true, ms: Date.now() - comenzado });
 }
