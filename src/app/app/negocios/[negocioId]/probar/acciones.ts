@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { evaluarHandoff } from "@/lib/agent/handoff";
+import { describirNegocio, type InfoNegocio } from "@/lib/agent/info-negocio";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "@/lib/agent/prompt";
 import { scoped } from "@/lib/data/scoped";
 import { completarChat } from "@/lib/openrouter/client";
@@ -101,8 +102,17 @@ export async function probarAgente(
    * la prueba montara el prompt por su cuenta, probaría algo que no es lo que
    * pasa en producción — y una prueba que miente es peor que no probar.
    */
+  // La misma ficha que usa el motor: si la prueba no la cargara, probaría un
+  // agente que no es el que atiende de verdad.
+  const { data: info } = await db
+    .from("business_info")
+    .select("*")
+    .maybeSingle()
+    .overrideTypes<InfoNegocio, { merge: false }>();
+
   const mensajes = construirMensajes({
     promptDelCanal: canales?.[0]?.system_prompt,
+    infoDelNegocio: describirNegocio(info),
     historial: historial.map((t) => ({
       direction: t.rol === "contacto" ? ("in" as const) : ("out" as const),
       text: t.texto,

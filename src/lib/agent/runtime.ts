@@ -7,6 +7,7 @@ import { enviarTexto } from "@/lib/ycloud/client";
 
 import { puedeEnviarTextoLibre, superaLimiteDeMensajes } from "./guardrails";
 import { evaluarHandoff, explicarHandoff, trajoArchivo, type MotivoHandoff } from "./handoff";
+import { describirNegocio, type InfoNegocio } from "./info-negocio";
 import { comprobarLimites, explicarFreno } from "./limites";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "./prompt";
 
@@ -149,6 +150,18 @@ export async function responderConversacion({
 
   const cuantosRecordar = ajustes?.mensajes_de_contexto ?? MENSAJES_DE_CONTEXTO;
 
+  /*
+   * La ficha del negocio. Puede no existir —es opcional— y en ese caso el
+   * agente sigue funcionando con lo que diga su prompt, como hasta ahora.
+   */
+  const { data: info } = await db
+    .from("business_info")
+    .select("*")
+    .maybeSingle()
+    .overrideTypes<InfoNegocio, { merge: false }>();
+
+  const contextoDelNegocio = describirNegocio(info);
+
   // Se piden los más recientes y se les da la vuelta: pedirlos ascendentes
   // obligaría a traer la conversación entera para quedarse con el final.
   const { data: recientes } = await db
@@ -232,6 +245,7 @@ export async function responderConversacion({
         modelo,
         mensajes: construirMensajes({
           promptDelCanal: canal.system_prompt,
+          infoDelNegocio: contextoDelNegocio,
           historial,
           cuantos: cuantosRecordar,
         }),

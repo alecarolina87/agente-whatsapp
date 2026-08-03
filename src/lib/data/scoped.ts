@@ -45,6 +45,7 @@ const TABLAS_CON_WORKSPACE = [
   "message_batches",
   "processed_events",
   "events",
+  "business_info",
 ] as const;
 
 export type TablaConWorkspace = (typeof TABLAS_CON_WORKSPACE)[number];

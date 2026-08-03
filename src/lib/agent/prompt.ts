@@ -57,10 +57,13 @@ export type MensajeHistorial = {
 
 export function construirMensajes({
   promptDelCanal,
+  infoDelNegocio,
   historial,
   cuantos = MENSAJES_DE_CONTEXTO,
 }: {
   promptDelCanal: string | null | undefined;
+  /** Los datos del negocio ya convertidos en texto (`describirNegocio`). */
+  infoDelNegocio?: string | null;
   /** De más antiguo a más reciente. */
   historial: MensajeHistorial[];
   /** Cuántos mensajes recientes conservar. Lo fija cada cliente. */
@@ -68,9 +71,18 @@ export function construirMensajes({
 }): Mensaje[] {
   const personalidad = promptDelCanal?.trim() || PROMPT_POR_DEFECTO;
 
-  const mensajes: Mensaje[] = [
-    { role: "system", content: `${personalidad}\n\n${REGLAS_DE_LA_PLATAFORMA}` },
-  ];
+  /*
+   * El orden es este y no otro: cómo habla → qué sabe → qué no puede hacer.
+   *
+   * Los datos del negocio van en medio porque las reglas de la plataforma
+   * tienen que quedar las últimas: lo último que lee el modelo pesa más, y esas
+   * no son negociables por mucho que diga la ficha de un cliente.
+   */
+  const partes = [personalidad];
+  if (infoDelNegocio?.trim()) partes.push(infoDelNegocio.trim());
+  partes.push(REGLAS_DE_LA_PLATAFORMA);
+
+  const mensajes: Mensaje[] = [{ role: "system", content: partes.join("\n\n") }];
 
   for (const m of historial.slice(-cuantos)) {
     const contenido = m.text?.trim();
