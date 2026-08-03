@@ -14,6 +14,7 @@ type FilaNegocio = {
   ia_activa: boolean;
   tope_mensual_usd: number | null;
   buffer_segundos: number;
+  mensajes_de_contexto: number;
   channels: { phone_number: string; status: string; system_prompt: string | null }[] | null;
 };
 
@@ -42,7 +43,8 @@ export default async function PaginaNegocio({
   const { data } = await supabase
     .from("workspaces")
     .select(
-      "id, name, slug, ia_activa, tope_mensual_usd, buffer_segundos, channels(phone_number, status, system_prompt)",
+      "id, name, slug, ia_activa, tope_mensual_usd, buffer_segundos, mensajes_de_contexto, " +
+        "channels(phone_number, status, system_prompt)",
     )
     .eq("id", negocioId)
     .maybeSingle()
@@ -92,28 +94,38 @@ export default async function PaginaNegocio({
       />
 
       <section className="rounded-[var(--radius-card)] border border-border bg-card/60 p-6">
-        <h2 className="text-sm font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-          Su agente
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+            Cómo habla
+          </h2>
+          <Link
+            href={`/app/negocios/${data.id}/ajustes`}
+            className="dato text-xs text-primary transition hover:underline"
+          >
+            Editar ajustes
+          </Link>
+        </div>
 
-        <dl className="mt-4 space-y-3 text-sm">
-          <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-muted-foreground">Espera antes de contestar</dt>
-            <dd className="dato">{data.buffer_segundos} s</dd>
+        <p className="mt-3 text-sm whitespace-pre-wrap">
+          {canal?.system_prompt || (
+            <span className="text-muted-foreground">
+              Sin instrucciones propias todavía: usa las reglas por defecto de la
+              plataforma. Escribirlas es lo que más cambia la calidad de las
+              respuestas.
+            </span>
+          )}
+        </p>
+
+        <dl className="dato mt-4 flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
+          <div className="flex gap-1.5">
+            <dt>Espera</dt>
+            <dd className="text-foreground">{data.buffer_segundos} s</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt>Recuerda</dt>
+            <dd className="text-foreground">{data.mensajes_de_contexto} mensajes</dd>
           </div>
         </dl>
-
-        <div className="mt-4 border-t border-border pt-4">
-          <p className="text-xs text-muted-foreground">Cómo se comporta</p>
-          <p className="mt-1.5 text-sm whitespace-pre-wrap">
-            {canal?.system_prompt || (
-              <span className="text-muted-foreground">
-                Sin instrucciones propias todavía: usa las reglas por defecto de la
-                plataforma.
-              </span>
-            )}
-          </p>
-        </div>
       </section>
 
       <Link
