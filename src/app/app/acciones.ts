@@ -50,6 +50,6 @@ export async function alternarIaDelWorkspace(workspaceId: string, activar: boole
     payload: {},
   });
 
-  revalidatePath("/app");
+  revalidatePath("/app", "layout");
   return { ok: true };
 }

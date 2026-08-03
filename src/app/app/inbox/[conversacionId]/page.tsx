@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { PanelConversacion } from "@/components/inbox/PanelConversacion";
-import { cargarHilo, workspaceActual } from "@/lib/data/inbox";
+import { cargarHilo } from "@/lib/data/inbox";
+import { negocioActual } from "@/lib/data/negocios";
 
 export default async function PaginaConversacion({
   params,
@@ -10,10 +11,10 @@ export default async function PaginaConversacion({
 }) {
   const { conversacionId } = await params;
 
-  const workspace = await workspaceActual();
-  if (!workspace) notFound();
+  const negocio = await negocioActual();
+  if (!negocio) notFound();
 
-  const hilo = await cargarHilo(workspace.id, conversacionId);
+  const hilo = await cargarHilo(negocio.id, conversacionId);
 
   /*
    * `cargarHilo` devuelve `null` tanto si la conversación no existe como si es

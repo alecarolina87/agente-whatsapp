@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { ContadorPestana } from "@/components/inbox/ContadorPestana";
 import { AvisoHandoff, EstadoVentana } from "@/components/inbox/EstadoVentana";
 import { ListaEnVivo } from "@/components/inbox/ListaEnVivo";
-import { listarConversaciones, workspaceActual } from "@/lib/data/inbox";
+import { listarConversaciones } from "@/lib/data/inbox";
+import { negocioActual } from "@/lib/data/negocios";
 import { necesitaPersona, type ConversacionListada } from "@/lib/data/inbox-tipos";
 
 export const metadata = { title: "Inbox · Agente de WhatsApp" };
@@ -17,17 +19,13 @@ export const metadata = { title: "Inbox · Agente de WhatsApp" };
  * inaceptable con doscientas.
  */
 export default async function LayoutInbox({ children }: { children: React.ReactNode }) {
-  const workspace = await workspaceActual();
+  const negocio = await negocioActual();
 
-  if (!workspace) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Todavía no perteneces a ningún workspace.
-      </p>
-    );
-  }
+  // Sin negocio no hay bandeja que enseñar: se manda a crearlo en vez de
+  // dejar una pantalla vacía que no dice qué hacer.
+  if (!negocio) redirect("/app/negocios");
 
-  const conversaciones = await listarConversaciones(workspace.id);
+  const conversaciones = await listarConversaciones(negocio.id);
 
   /*
    * Las que esperan a una persona van arriba, en su propio grupo.
@@ -52,7 +50,7 @@ export default async function LayoutInbox({ children }: { children: React.ReactN
           <span className="dato text-xs text-muted-foreground">{conversaciones.length}</span>
         </div>
 
-        <ListaEnVivo workspaceId={workspace.id} />
+        <ListaEnVivo workspaceId={negocio.id} />
 
         <div className="flex-1 overflow-y-auto">
           {conversaciones.length === 0 && (

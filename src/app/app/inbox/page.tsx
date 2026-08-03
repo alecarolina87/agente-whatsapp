@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-import { listarConversaciones, workspaceActual } from "@/lib/data/inbox";
+import { listarConversaciones } from "@/lib/data/inbox";
+import { negocioActual } from "@/lib/data/negocios";
 import { necesitaPersona } from "@/lib/data/inbox-tipos";
 
 /**
@@ -11,8 +12,8 @@ import { necesitaPersona } from "@/lib/data/inbox-tipos";
  * responder a la pregunta con la que entra, que es *¿me espera alguien?*.
  */
 export default async function InboxSinSeleccion() {
-  const workspace = await workspaceActual();
-  const conversaciones = workspace ? await listarConversaciones(workspace.id) : [];
+  const negocio = await negocioActual();
+  const conversaciones = negocio ? await listarConversaciones(negocio.id) : [];
   const esperando = conversaciones.filter(necesitaPersona);
 
   if (esperando.length === 0) {
