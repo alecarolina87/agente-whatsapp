@@ -98,12 +98,20 @@ export default async function PaginaNegocio({
           <h2 className="text-sm font-semibold tracking-[0.14em] text-muted-foreground uppercase">
             Cómo habla
           </h2>
-          <Link
-            href={`/app/negocios/${data.id}/ajustes`}
-            className="dato text-xs text-primary transition hover:underline"
-          >
-            Editar ajustes
-          </Link>
+          <div className="dato flex gap-4 text-xs">
+            <Link
+              href={`/app/negocios/${data.id}/probar`}
+              className="text-primary transition hover:underline"
+            >
+              Probar el agente
+            </Link>
+            <Link
+              href={`/app/negocios/${data.id}/ajustes`}
+              className="text-muted-foreground transition hover:text-foreground"
+            >
+              Ajustes
+            </Link>
+          </div>
         </div>
 
         <p className="mt-3 text-sm whitespace-pre-wrap">
