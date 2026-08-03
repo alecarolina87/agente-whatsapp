@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { COOKIE_NEGOCIO } from "@/lib/data/negocios";
 import { createClient } from "@/lib/supabase/server";
+import { comprobarCredenciales } from "@/lib/ycloud/verificar";
 
 /**
  * Alta de un negocio y cambio entre negocios.
@@ -128,4 +129,57 @@ export async function elegirNegocio(workspaceId: string) {
   });
 
   revalidatePath("/app", "layout");
+}
+
+/**
+ * Comprueba unas credenciales de YCloud sin guardarlas.
+ *
+ * La llama el formulario mientras se rellena, para que un error de copiar y
+ * pegar salte ahí y no días después, cuando una clienta escriba y no le
+ * conteste nadie.
+ */
+export async function validarClavesYCloud({
+  apiKey,
+  telefono,
+}: {
+  apiKey: string;
+  telefono?: string;
+}): Promise<{ ok: boolean; mensaje: string; numeros?: string[] }> {
+  // Hace falta sesión: si no, esto sería un servicio gratuito para que
+  // cualquiera comprobase claves de YCloud robadas contra nuestro servidor.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { ok: false, mensaje: "Hace falta iniciar sesión." };
+
+  const r = await comprobarCredenciales({ apiKey, telefono });
+
+  if (!r.ok) return { ok: false, mensaje: r.motivo };
+
+  const numeros = r.numeros.map((n) => n.telefono);
+
+  /*
+   * El caso que de verdad importa: la clave es buena pero el número no es de
+   * esa cuenta. Ya pasó una vez en este proyecto y se descubrió por casualidad.
+   */
+  if (r.coincide === false) {
+    return {
+      ok: false,
+      mensaje:
+        `La clave funciona, pero ${telefono} no está en esa cuenta de YCloud. ` +
+        `Los números que sí están: ${numeros.join(", ")}.`,
+      numeros,
+    };
+  }
+
+  return {
+    ok: true,
+    mensaje:
+      r.coincide === true
+        ? "Todo correcto: la clave funciona y el número está en la cuenta."
+        : `La clave funciona. Números en la cuenta: ${numeros.join(", ")}.`,
+    numeros,
+  };
 }

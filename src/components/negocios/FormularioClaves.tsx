@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
   guardarClaves,
   type EstadoAjustes,
 } from "@/app/app/negocios/[negocioId]/ajustes/acciones";
+import { ComprobarClaves } from "./ComprobarClaves";
 
 /**
  * Conectar el WhatsApp de un negocio, o cambiarle las claves.
@@ -41,10 +42,13 @@ function Boton({ conectado }: { conectado: boolean }) {
 export function FormularioClaves({
   negocioId,
   conectado,
+  telefono,
 }: {
   negocioId: string;
   conectado: boolean;
+  telefono: string | null;
 }) {
+  const apiKeyRef = useRef<HTMLInputElement>(null);
   const [estado, ejecutar] = useActionState<EstadoAjustes, FormData>(
     guardarClaves.bind(null, negocioId),
     {},
@@ -89,6 +93,7 @@ export function FormularioClaves({
             <input
               id="apiKey"
               name="apiKey"
+              ref={apiKeyRef}
               type="password"
               autoComplete="off"
               required
@@ -96,6 +101,11 @@ export function FormularioClaves({
               placeholder="••••••••••••"
             />
           </div>
+
+          <ComprobarClaves
+            obtenerApiKey={() => apiKeyRef.current?.value ?? ""}
+            obtenerTelefono={telefono ? () => telefono : undefined}
+          />
 
           <div className="space-y-1.5">
             <label htmlFor="webhookSecret" className="block text-sm font-medium">

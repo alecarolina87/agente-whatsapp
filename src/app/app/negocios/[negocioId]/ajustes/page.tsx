@@ -14,7 +14,9 @@ type FilaNegocio = {
   mensajes_de_contexto: number;
   tope_mensual_usd: number | null;
   tope_respuestas_hora: number;
-  channels: { status: string; system_prompt: string | null; respuesta_a_archivos: string }[] | null;
+  channels:
+    | { phone_number: string; status: string; system_prompt: string | null; respuesta_a_archivos: string }[]
+    | null;
 };
 
 export default async function PaginaAjustes({
@@ -29,7 +31,7 @@ export default async function PaginaAjustes({
     .from("workspaces")
     .select(
       "id, name, buffer_segundos, mensajes_de_contexto, tope_mensual_usd, tope_respuestas_hora, " +
-        "channels(status, system_prompt, respuesta_a_archivos)",
+        "channels(phone_number, status, system_prompt, respuesta_a_archivos)",
     )
     .eq("id", negocioId)
     .maybeSingle()
@@ -54,7 +56,11 @@ export default async function PaginaAjustes({
         </p>
       </div>
 
-      <FormularioClaves negocioId={data.id} conectado={canal?.status === "active"} />
+      <FormularioClaves
+        negocioId={data.id}
+        conectado={canal?.status === "active"}
+        telefono={canal?.phone_number ?? null}
+      />
 
       <FormularioAjustes
         negocioId={data.id}
