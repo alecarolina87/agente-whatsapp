@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { scoped } from "@/lib/data/scoped";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { guardarSecreto, nombreSecreto } from "@/lib/vault";
+import { BUCKET } from "@/lib/ycloud/media";
 
 /**
  * Ajustes de un negocio.
@@ -197,4 +199,88 @@ export async function guardarClaves(
 
   revalidatePath("/app", "layout");
   return { guardado: true };
+}
+
+/**
+ * Borra un negocio y todo lo suyo. **No se puede deshacer.**
+ *
+ * ## El orden importa
+ *
+ * Primero los archivos y los secretos, y la fila del workspace al final. Al
+ * revés, un fallo a mitad dejaría la fila borrada y las fotos de sus clientas
+ * huérfanas en el almacén, sin nada que las relacione con nadie — imposibles de
+ * encontrar y, por tanto, imposibles de borrar.
+ *
+ * De este modo, si algo falla por el camino, el negocio sigue existiendo y se
+ * puede reintentar. Un borrado a medias que se puede repetir es mucho mejor que
+ * uno que deja restos invisibles.
+ */
+export async function eliminarNegocio(
+  negocioId: string,
+  nombreEscrito: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+
+  const { data: negocio } = await supabase
+    .from("workspaces")
+    .select("id, name")
+    .eq("id", negocioId)
+    .maybeSingle()
+    .overrideTypes<{ id: string; name: string }, { merge: false }>();
+
+  if (!negocio) return { ok: false, error: "No se encuentra ese negocio." };
+
+  /*
+   * Escribir el nombre a mano. No es burocracia: es la diferencia entre borrar
+   * el cliente que querías y el de al lado por tener dos pestañas abiertas.
+   */
+  if (nombreEscrito.trim() !== negocio.name.trim()) {
+    return { ok: false, error: "El nombre no coincide. Escríbelo exactamente igual." };
+  }
+
+  const admin = createAdminClient();
+
+  /*
+   * 1 · Los archivos. Es lo que más importa: ahí hay fotos que mandaron
+   * pacientes y clientas, y no pueden quedarse en la base de datos de la
+   * agencia cuando el negocio ya no es cliente.
+   */
+  const { data: carpetas } = await admin.storage.from(BUCKET).list(negocioId);
+
+  if (carpetas?.length) {
+    // Storage no borra carpetas: hay que enumerar los archivos de cada una.
+    for (const carpeta of carpetas) {
+      const { data: archivos } = await admin.storage
+        .from(BUCKET)
+        .list(`${negocioId}/${carpeta.name}`);
+
+      if (archivos?.length) {
+        await admin.storage
+          .from(BUCKET)
+          .remove(archivos.map((a) => `${negocioId}/${carpeta.name}/${a.name}`));
+      }
+    }
+  }
+
+  // 2 · Sus claves de Vault, que la cascada tampoco alcanza.
+  const { error: errorSecretos } = await admin.rpc("borrar_secretos_del_negocio", {
+    p_workspace_id: negocioId,
+  });
+
+  if (errorSecretos) {
+    console.error("[negocios] no se pudieron borrar los secretos", errorSecretos.message);
+    return { ok: false, error: "No se pudo completar el borrado. Inténtalo otra vez." };
+  }
+
+  // 3 · La fila. Con ella se van en cascada canal, contactos, conversaciones,
+  // mensajes, eventos y su ficha.
+  const { error } = await supabase.from("workspaces").delete().eq("id", negocioId);
+
+  if (error) {
+    console.error("[negocios] no se pudo borrar el workspace", error.message);
+    return { ok: false, error: "No tienes permiso para borrar este negocio." };
+  }
+
+  revalidatePath("/app", "layout");
+  return { ok: true };
 }

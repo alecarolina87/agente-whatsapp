@@ -194,7 +194,9 @@ export function FormularioInfo({
           <input
             value={web}
             onChange={(e) => setWeb(e.target.value)}
-            placeholder="clinicadentalone.es"
+            // Un ejemplo con pinta de real induce a escribirlo tal cual: pasó
+            // la primera vez que se usó esto.
+            placeholder="La dirección de su web"
             aria-label="Dirección de la web"
             className={`${CAMPO} dato flex-1`}
           />

@@ -34,7 +34,19 @@ Reglas:
 - Los precios, cópialos tal cual aparecen ("desde 60 €", "consultar").
 - En "objeciones" pon las dudas que frenan a un cliente —que es caro, que duele, que está lejos— solo si la web las trata. Si no dice nada, deja la lista vacía.
 - Escribe en el mismo idioma que la web.
-- Máximo 12 servicios y 8 preguntas: quédate con lo que más se pregunta.`;
+- Máximo 12 servicios y 8 preguntas: quédate con lo que más se pregunta.
+
+NO EXTRAIGAS NUNCA, aunque aparezcan en la web:
+- Valoraciones, estrellas o puntuaciones ("4,9 en Google").
+- Número de clientes, pacientes o años de experiencia ("+2.000 pacientes").
+- Testimonios, reseñas u opiniones de clientes.
+- Premios, certificaciones, rankings o el ser "líder" o "el mejor" en algo.
+- Promesas de resultado, de que algo no duele o de plazos de curación.
+
+Estas afirmaciones son las que meten en problemas a un negocio si no se pueden
+demostrar, y una web las lleva por marketing sin que nadie las haya comprobado.
+El asistente no debe repetirlas nunca. Si la web va de eso, extrae los servicios
+y deja lo demás fuera.`;
 
 export type FichaPropuesta = {
   texto_libre: string;
