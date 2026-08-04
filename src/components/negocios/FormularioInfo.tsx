@@ -2,7 +2,11 @@
 
 import { useState, useTransition } from "react";
 
-import { guardarFicha, type Ficha } from "@/app/app/negocios/[negocioId]/info/acciones";
+import {
+  guardarFicha,
+  proponerDesdeWeb,
+  type Ficha,
+} from "@/app/app/negocios/[negocioId]/info/acciones";
 
 /**
  * La ficha del negocio: lo que el agente sabe.
@@ -141,8 +145,133 @@ export function FormularioInfo({
     setEstado({});
   };
 
+  /*
+   * Lo que propone el modelo se guarda aparte hasta que alguien dice que sí.
+   * Volcarlo directo en el formulario borraría lo ya escrito sin preguntar, y
+   * además nadie revisaría nada: se aceptaría por inercia.
+   */
+  const [web, setWeb] = useState("");
+  const [propuesta, setPropuesta] = useState<{
+    ficha: Partial<Ficha>;
+    coste: number;
+  } | null>(null);
+  const [errorWeb, setErrorWeb] = useState<string | null>(null);
+  const [leyendo, iniciarLectura] = useTransition();
+
+  function aplicarPropuesta() {
+    if (!propuesta) return;
+
+    setF((v) => ({
+      ...v,
+      ...propuesta.ficha,
+      // El texto libre se añade al que hubiera, no lo pisa: lo que escribió una
+      // persona vale más que lo que dedujo un modelo.
+      texto_libre: [v.texto_libre, propuesta.ficha.texto_libre].filter(Boolean).join("\n\n"),
+      servicios: [...v.servicios, ...(propuesta.ficha.servicios ?? [])],
+      faqs: [...v.faqs, ...(propuesta.ficha.faqs ?? [])],
+      objeciones: [...v.objeciones, ...(propuesta.ficha.objeciones ?? [])],
+      web: v.web || web,
+    }));
+    setPropuesta(null);
+    setEstado({});
+  }
+
   return (
     <div className="space-y-6">
+      <section className="space-y-3 rounded-[var(--radius-card)] border border-primary/40 bg-primary/5 p-6">
+        <div>
+          <h2 className="text-sm font-semibold tracking-[0.14em] text-primary uppercase">
+            Empezar desde su web
+          </h2>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Pega la dirección y se lee para proponerte la ficha. Lo revisas antes
+            de guardar nada: un modelo leyendo una web se inventa un precio de vez
+            en cuando, y eso en una clínica no puede pasar.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <input
+            value={web}
+            onChange={(e) => setWeb(e.target.value)}
+            placeholder="clinicadentalone.es"
+            aria-label="Dirección de la web"
+            className={`${CAMPO} dato flex-1`}
+          />
+          <button
+            type="button"
+            disabled={leyendo || !web.trim()}
+            onClick={() =>
+              iniciarLectura(async () => {
+                setErrorWeb(null);
+                setPropuesta(null);
+                const r = await proponerDesdeWeb(negocioId, web);
+                if (r.ok) setPropuesta({ ficha: r.ficha, coste: r.costeUsd });
+                else setErrorWeb(r.error);
+              })
+            }
+            className="rounded-[var(--radius-control)] bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+          >
+            {leyendo ? "Leyendo la web…" : "Leer"}
+          </button>
+        </div>
+
+        {errorWeb && (
+          <p
+            role="alert"
+            className="rounded-[var(--radius-control)] border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+          >
+            {errorWeb}
+          </p>
+        )}
+
+        {propuesta && (
+          <div className="space-y-3 rounded-[var(--radius-control)] border border-border bg-background p-4">
+            <p className="text-sm">
+              Encontrado:{" "}
+              <span className="dato">
+                {propuesta.ficha.servicios?.length ?? 0} servicios ·{" "}
+                {propuesta.ficha.faqs?.length ?? 0} preguntas ·{" "}
+                {propuesta.ficha.objeciones?.length ?? 0} pegas
+              </span>
+            </p>
+
+            {propuesta.ficha.texto_libre && (
+              <p className="text-xs whitespace-pre-wrap text-muted-foreground">
+                {propuesta.ficha.texto_libre.slice(0, 400)}
+                {propuesta.ficha.texto_libre.length > 400 ? "…" : ""}
+              </p>
+            )}
+
+            <p className="dato text-xs text-muted-foreground">
+              Coste de la lectura: {propuesta.coste.toFixed(4)} $
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={aplicarPropuesta}
+                className="rounded-[var(--radius-control)] bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition hover:brightness-110"
+              >
+                Añadir al formulario
+              </button>
+              <button
+                type="button"
+                onClick={() => setPropuesta(null)}
+                className="rounded-[var(--radius-control)] border border-border px-4 py-2 text-xs transition hover:bg-muted"
+              >
+                Descartar
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Se añade a lo que ya hay, sin borrar nada. Revísalo abajo y después
+              guarda.
+            </p>
+          </div>
+        )}
+      </section>
+
       <Seccion
         titulo="Cuéntalo con tus palabras"
         ayuda="Lo más rápido y lo que más sirve. Qué es el negocio, qué ofrece, cómo trabaja. Con esto solo, el agente ya sabe de qué habla."

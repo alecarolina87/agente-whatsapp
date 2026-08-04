@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { extraerFicha, type FichaPropuesta } from "@/lib/agent/extraer-ficha";
 import { scoped } from "@/lib/data/scoped";
 import { createClient } from "@/lib/supabase/server";
+import { leerPagina } from "@/lib/web/leer-pagina";
 
 /**
  * Guardar la ficha del negocio.
@@ -143,4 +145,50 @@ export async function guardarFicha(
 
   revalidatePath("/app", "layout");
   return { guardado: true };
+}
+
+/**
+ * Lee la web del cliente y propone una ficha.
+ *
+ * **No guarda nada.** Devuelve la propuesta para que una persona la revise: un
+ * modelo leyendo una web se inventa un precio de vez en cuando, y un precio
+ * inventado en el agente de una clínica acaba en una reclamación.
+ */
+export async function proponerDesdeWeb(
+  negocioId: string,
+  direccion: string,
+): Promise<
+  { ok: true; ficha: FichaPropuesta; urlFinal: string; costeUsd: number } | { ok: false; error: string }
+> {
+  if (!(await puedeGestionar(negocioId))) {
+    return { ok: false, error: "No tienes permiso para cambiar este negocio." };
+  }
+
+  if (!direccion.trim()) return { ok: false, error: "Escribe la dirección de su web." };
+
+  const pagina = await leerPagina(direccion);
+  if (!pagina.ok) return { ok: false, error: pagina.motivo };
+
+  const extraida = await extraerFicha(pagina.texto);
+  if (!extraida.ok) return { ok: false, error: extraida.motivo };
+
+  // Queda registrado porque cuesta dinero: leer una web entera son bastantes
+  // más tokens que contestar un WhatsApp.
+  await scoped(negocioId).from("events").insert({
+    type: "business_info.scraped",
+    actor: "human",
+    payload: {
+      url: pagina.urlFinal,
+      coste_usd: extraida.costeUsd,
+      servicios: extraida.ficha.servicios.length,
+      faqs: extraida.ficha.faqs.length,
+    },
+  });
+
+  return {
+    ok: true,
+    ficha: extraida.ficha,
+    urlFinal: pagina.urlFinal,
+    costeUsd: extraida.costeUsd,
+  };
 }
