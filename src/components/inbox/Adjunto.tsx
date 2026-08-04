@@ -1,25 +1,22 @@
-import type { MediaDelMensaje } from "@/lib/data/inbox-tipos";
-
 /**
- * El archivo de un mensaje, dentro de su burbuja.
+ * Aviso de que llegó un archivo, sin el archivo.
  *
- * Se pinta según el tipo y no con un icono genérico porque el caso de uso lo
- * pide: la mayoría de estos archivos son fotos que hay que **mirar** para
- * contestar —cejas antes de una cita, una cicatrización a los cinco días—, y
- * tener que abrir cada una en otra pestaña convierte revisar la bandeja en un
- * trabajo.
+ * ## Por qué no se ve aquí la foto
  *
- * No usa `next/image` a propósito: la URL viene firmada y caduca, así que el
- * optimizador la cachearía y a la hora serviría un enlace muerto.
+ * Es una decisión de producto, no una limitación. Por este sistema pasan
+ * radiografías, cicatrices y piel de pacientes y clientas. Guardar esos
+ * archivos convertiría a quien opera la plataforma en encargada del
+ * tratamiento de datos de salud de personas que ni saben que existe, con el
+ * contrato y las obligaciones que eso arrastra.
+ *
+ * Lo que se hace en su lugar: registrar **que llegó**, de qué tipo, y su pie de
+ * foto. Quien atiende la abre en su WhatsApp, que es donde ya estaba y donde le
+ * corresponde estar.
+ *
+ * Y es argumento de venta: se le puede decir a una clínica que su agente no
+ * almacena ni una imagen de sus pacientes.
  */
 
-function pesoLegible(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Cómo llamar a cada cosa cuando hay que decir que no se pudo recuperar. */
 const NOMBRE_DEL_TIPO: Record<string, string> = {
   image: "una foto",
   audio: "una nota de voz",
@@ -27,75 +24,22 @@ const NOMBRE_DEL_TIPO: Record<string, string> = {
   document: "un documento",
 };
 
-/** Si el mensaje traía un archivo, aunque no se haya podido guardar. */
+/** Si el mensaje traía un archivo. */
 export function esArchivo(tipo: string): boolean {
   return tipo in NOMBRE_DEL_TIPO;
 }
 
-export function Adjunto({ tipo, media }: { tipo: string; media: MediaDelMensaje | null }) {
-  /*
-   * Un mensaje de tipo archivo **sin** archivo: la descarga falló, casi siempre
-   * porque el enlace de YCloud caducó antes de bajarlo.
-   *
-   * Hay que decirlo. Sin este aviso el mensaje se vería como texto normal —o
-   * como una burbuja vacía— y quien lo lee no sabría que le mandaron una foto.
-   * Eso es peor que un error visible: es un error invisible.
-   */
-  if (!media) {
-    if (!NOMBRE_DEL_TIPO[tipo]) return null;
-
-    return (
-      <p className="rounded-[var(--radius-control)] border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-        Te envió {NOMBRE_DEL_TIPO[tipo]} que no se pudo recuperar. Pídesela otra vez.
-      </p>
-    );
-  }
-
-  // Guardado pero sin poder firmar la URL: el archivo está, no se puede servir.
-  if (!media.url) {
-    return (
-      <p className="rounded-[var(--radius-control)] border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-        No se pudo abrir el archivo ({media.nombre}).
-      </p>
-    );
-  }
-
-  const familia = media.mime.split("/")[0];
-
-  if (familia === "image") {
-    return (
-      <a href={media.url} target="_blank" rel="noopener noreferrer" className="block">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={media.url}
-          alt={`Archivo enviado por el contacto: ${media.nombre}`}
-          className="max-h-64 w-auto rounded-[var(--radius-control)] object-cover"
-          loading="lazy"
-        />
-      </a>
-    );
-  }
-
-  if (familia === "audio") {
-    // Las notas de voz se escuchan aquí mismo: son el adjunto que más veces
-    // llega y abrirlas fuera perdería el hilo de la conversación.
-    return <audio controls src={media.url} className="max-w-full" />;
-  }
-
-  if (familia === "video") {
-    return <video controls src={media.url} className="max-h-64 rounded-[var(--radius-control)]" />;
-  }
+export function Adjunto({ tipo }: { tipo: string }) {
+  const nombre = NOMBRE_DEL_TIPO[tipo];
+  if (!nombre) return null;
 
   return (
-    <a
-      href={media.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-center gap-2 rounded-[var(--radius-control)] border border-border px-3 py-2 text-xs hover:bg-muted"
-    >
+    <p className="flex items-center gap-2 rounded-[var(--radius-control)] border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
       <span aria-hidden="true">📎</span>
-      <span className="truncate">{media.nombre}</span>
-      <span className="dato text-muted-foreground">{pesoLegible(media.bytes)}</span>
-    </a>
+      <span>
+        Te envió {nombre}. Ábrela en WhatsApp —{" "}
+        <span className="text-foreground">aquí no se guarda</span>.
+      </span>
+    </p>
   );
 }

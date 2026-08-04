@@ -5,7 +5,6 @@ import type {
   HiloConversacion,
 } from "@/lib/data/inbox-tipos";
 import { createClient } from "@/lib/supabase/server";
-import { urlFirmada, type MediaGuardada } from "@/lib/ycloud/media";
 
 export type * from "@/lib/data/inbox-tipos";
 
@@ -141,7 +140,7 @@ export async function cargarHilo(
 
   const { data: mensajes } = await supabase
     .from("messages")
-    .select("id, direction, sender, text, type, status, media, created_at")
+    .select("id, direction, sender, text, type, status, created_at")
     .eq("conversation_id", conversacionId)
     .order("created_at", { ascending: true })
     .overrideTypes<
@@ -152,29 +151,10 @@ export async function cargarHilo(
         text: string | null;
         type: string;
         status: string;
-        media: MediaGuardada | null;
         created_at: string;
       }[],
       { merge: false }
     >();
-
-  /*
-   * Las URLs de los archivos se firman aquí, todas a la vez.
-   *
-   * Firmar con la clave de servicio dentro de una función que lee con la sesión
-   * del usuario parece una grieta, y no lo es: para llegar hasta aquí la
-   * consulta de arriba ya ha pasado por RLS, así que solo se firman rutas de
-   * mensajes que esta persona puede leer. El bucket no tiene ninguna política
-   * para `authenticated` justamente para que esta sea la única puerta.
-   */
-  const conArchivo = (mensajes ?? []).filter((m) => m.media?.ruta);
-  const firmadas = new Map(
-    await Promise.all(
-      conArchivo.map(
-        async (m) => [m.id, await urlFirmada(m.media!.ruta)] as const,
-      ),
-    ),
-  );
 
   return {
     id: conversacion.id,
@@ -193,14 +173,6 @@ export async function cargarHilo(
       tipo: m.type,
       estado: m.status,
       creadoEn: m.created_at,
-      media: m.media?.ruta
-        ? {
-            url: firmadas.get(m.id) ?? null,
-            mime: m.media.mime,
-            nombre: m.media.nombre,
-            bytes: m.media.bytes,
-          }
-        : null,
     })),
   };
 }

@@ -17,7 +17,7 @@ Hecho por [Alejandra Ramos](https://alejandraramos.dev).
 | | |
 |---|---|
 | **Recibe** | Webhook de YCloud con firma HMAC verificada, deduplicación por evento y acuse rápido |
-| **Entiende** | Texto, fotos, notas de voz, vídeos y documentos, con el pie de foto conservado |
+| **Entiende** | Texto, y el pie de foto de los archivos. **Ningún archivo se almacena** |
 | **Responde** | OpenRouter, con la personalidad de cada cliente sacada de la base de datos |
 | **Espera** | Buffer de silencio: quien escribe a trozos recibe **una** respuesta, no tres |
 | **Se aparta** | Paso a una persona si lo piden, si el agente no sabe seguir, o si llega un archivo |
@@ -52,10 +52,16 @@ está al límite el agente se calla, pero la conversación queda señalada igual
 Una foto sin contestar y sin marcar es una clienta esperando a alguien que no
 sabe que la está esperando.
 
-**Los archivos van a un bucket privado con URLs firmadas que caducan.** Son
-fotos de la piel de personas reales. Y solo se descargan de `api.ycloud.com`
-exacto: el enlace viene dentro del cuerpo del webhook, o sea que es dato de
-fuera, y sin esa comprobación el servidor descargaría lo que le pusieran ahí.
+**No se almacena ningún archivo, y es deliberado.** Por aquí pasan
+radiografías, cicatrices y piel de pacientes. Guardarlas convertiría a quien
+opera la plataforma en encargada del tratamiento de datos de salud de personas
+que ni saben que existe, con el contrato y las obligaciones que eso arrastra.
+Se registra que llegó un archivo, de qué tipo y su pie de foto; quien atiende lo
+abre en su WhatsApp, que es donde ya estaba.
+
+La minimización de datos es la única obligación del RGPD que quita trabajo en
+vez de darlo: lo que no se guarda no hay que retenerlo, ni borrarlo, ni
+justificarlo.
 
 **Los ecos se descartan.** La respuesta del agente vuelve como evento de
 YCloud; procesarla dispararía otra respuesta, y otra, pagando una llamada al
@@ -64,16 +70,16 @@ modelo en cada vuelta.
 ## Cómo está montado
 
 ```
-src/lib/ycloud/     firma, normalización E.164, tipos del evento, archivos
+src/lib/ycloud/     firma, normalización E.164, tipos del evento, verificación
 src/lib/agent/      motor, prompt, guardrails, límites de gasto, buffer, handoff
 src/lib/data/       capa con workspace obligatorio y lista de tablas permitidas
 src/lib/vault.ts    guardar y leer secretos
 src/app/api/        webhook por workspace + barrido interno del buffer
 src/app/app/inbox/  la bandeja
-supabase/migrations/ esquema, RLS, grants, Vault, realtime, límites, buffer, media
+supabase/migrations/ esquema, RLS, grants, Vault, realtime, límites, buffer, negocios
 ```
 
-**108 tests.** No cubren por cubrir: cazaron un límite de respuestas que contaba
+**123 tests.** No cubren por cubrir: cazaron un límite de respuestas que contaba
 por workspace en vez de por conversación —un contacto hablador habría callado
 al agente para todos los demás clientes— y una forma de pedir un humano que la
 lista no reconocía.
@@ -96,7 +102,7 @@ lista no reconocía.
 |------|-----------|
 | Framework | Next.js 16 (App Router, Turbopack) · React 19 · TypeScript |
 | Estilos | Tailwind CSS 4 |
-| Datos, auth y archivos | Supabase — Postgres con RLS, Vault, Realtime, Storage |
+| Datos y auth | Supabase — Postgres con RLS, Vault, Realtime |
 | WhatsApp | YCloud (BSP), sin integración directa con Meta |
 | Modelos | OpenRouter, seleccionable por workspace |
 | Hosting | Vercel · barrido del buffer con `pg_cron` dentro de Supabase |

@@ -7,7 +7,6 @@ import { scoped } from "@/lib/data/scoped";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { guardarSecreto, nombreSecreto } from "@/lib/vault";
-import { BUCKET } from "@/lib/ycloud/media";
 
 /**
  * Ajustes de un negocio.
@@ -241,28 +240,14 @@ export async function eliminarNegocio(
   const admin = createAdminClient();
 
   /*
-   * 1 · Los archivos. Es lo que más importa: ahí hay fotos que mandaron
-   * pacientes y clientas, y no pueden quedarse en la base de datos de la
-   * agencia cuando el negocio ya no es cliente.
+   * No hay archivos que borrar: esta plataforma no guarda ninguno. Las fotos
+   * que mandan pacientes y clientas se quedan en WhatsApp y nunca llegan aquí.
+   * Es lo que permite decirle a una clínica que su agente no almacena imágenes
+   * de sus pacientes.
    */
-  const { data: carpetas } = await admin.storage.from(BUCKET).list(negocioId);
 
-  if (carpetas?.length) {
-    // Storage no borra carpetas: hay que enumerar los archivos de cada una.
-    for (const carpeta of carpetas) {
-      const { data: archivos } = await admin.storage
-        .from(BUCKET)
-        .list(`${negocioId}/${carpeta.name}`);
-
-      if (archivos?.length) {
-        await admin.storage
-          .from(BUCKET)
-          .remove(archivos.map((a) => `${negocioId}/${carpeta.name}/${a.name}`));
-      }
-    }
-  }
-
-  // 2 · Sus claves de Vault, que la cascada tampoco alcanza.
+  // 1 · Sus claves de Vault, que la cascada no alcanza porque Vault vive fuera
+  // del esquema público.
   const { error: errorSecretos } = await admin.rpc("borrar_secretos_del_negocio", {
     p_workspace_id: negocioId,
   });
@@ -272,7 +257,7 @@ export async function eliminarNegocio(
     return { ok: false, error: "No se pudo completar el borrado. Inténtalo otra vez." };
   }
 
-  // 3 · La fila. Con ella se van en cascada canal, contactos, conversaciones,
+  // 2 · La fila. Con ella se van en cascada canal, contactos, conversaciones,
   // mensajes, eventos y su ficha.
   const { error } = await supabase.from("workspaces").delete().eq("id", negocioId);
 

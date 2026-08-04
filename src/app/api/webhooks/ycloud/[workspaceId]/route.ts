@@ -4,7 +4,6 @@ import { encolarEnLote } from "@/lib/agent/buffer";
 import { calcularCaducidadVentana } from "@/lib/agent/guardrails";
 import { scoped } from "@/lib/data/scoped";
 import { leerSecreto } from "@/lib/vault";
-import { guardarAdjunto } from "@/lib/ycloud/media";
 import { parsearEntrante } from "@/lib/ycloud/types";
 import { verificarFirma } from "@/lib/ycloud/verify";
 
@@ -340,53 +339,18 @@ export async function POST(
   });
 
   /*
-   * PASO 7 · El archivo, después de contestar.
+   * Los archivos NO se descargan ni se guardan. Es una decisión de producto y
+   * de ley, no una limitación técnica.
    *
-   * Bajar una foto puede tardar segundos, y el ACK tiene que salir en menos de
-   * dos o YCloud reintenta. Con `after()` el mensaje ya está guardado y la
-   * respuesta ya ha salido; el archivo se le añade encima.
+   * Por aquí pasan fotos de pacientes y de clientas: radiografías, cicatrices,
+   * piel. Guardarlas convertiría a la agencia en encargada del tratamiento de
+   * datos de salud de personas que ni siquiera saben que existe, con el
+   * contrato y las obligaciones que eso arrastra.
    *
-   * Que llegue tarde no rompe nada: el buffer espera su silencio antes de
-   * contestar, y el handoff automático por imagen depende del **tipo** del
-   * mensaje, que sí se guardó al instante.
+   * Lo que sí queda: que llegó un archivo, de qué tipo, su pie de foto, y el
+   * traspaso a una persona. Quien atiende lo abre en su WhatsApp, que es donde
+   * ya estaba y donde le corresponde estar.
    */
-  const mensajeId = guardados?.[0]?.id;
-
-  if (mensaje.adjunto && mensajeId) {
-    after(async () => {
-      const apiKey = await leerSecreto(canal.ycloud_credential_ref);
-
-      if (!apiKey) {
-        console.warn(`[webhook] canal ${canal.id} sin credencial: no se baja el adjunto`);
-        return;
-      }
-
-      const resultado = await guardarAdjunto({
-        adjunto: mensaje.adjunto!,
-        apiKey,
-        workspaceId,
-        conversacionId,
-      });
-
-      if (!resultado.ok) {
-        /*
-         * El mensaje se queda sin archivo, pero visible en la bandeja: es
-         * preferible que Ale vea "mandó una foto que no pudimos recuperar" a
-         * que no vea nada y crea que la clienta no escribió.
-         */
-        console.error(`[webhook] adjunto no guardado: ${resultado.motivo}`);
-        await db.from("events").insert({
-          conversation_id: conversacionId,
-          type: "media.failed",
-          actor: "system",
-          payload: { motivo: resultado.motivo, mensaje_id: mensajeId },
-        });
-        return;
-      }
-
-      await db.from("messages").update({ media: resultado.media }).eq("id", mensajeId);
-    });
-  }
 
   return Response.json({ ok: true, ms: Date.now() - comenzado });
 }

@@ -148,7 +148,7 @@ export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
                   pudo recuperar: ahí avisa en vez de dejar la burbuja muda. */}
               {esArchivo(m.tipo) && (
                 <div className="mb-1.5">
-                  <Adjunto tipo={m.tipo} media={m.media} />
+                  <Adjunto tipo={m.tipo} />
                 </div>
               )}
 

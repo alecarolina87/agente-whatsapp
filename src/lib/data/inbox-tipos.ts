@@ -40,21 +40,6 @@ export function necesitaPersona(c: ConversacionListada): boolean {
   return c.estado === "handoff_pending" || (!c.iaActiva && c.sinLeer > 0);
 }
 
-/**
- * El archivo de un mensaje, listo para pintar.
- *
- * La `url` viene ya firmada y caduca a la hora: el bucket es privado porque
- * ahí dentro hay fotos de la piel de personas reales. Por eso se genera al
- * cargar el hilo y no se guarda en ninguna parte.
- */
-export type MediaDelMensaje = {
-  /** `null` si el archivo no llegó a guardarse o la firma falló. */
-  url: string | null;
-  mime: string;
-  nombre: string;
-  bytes: number;
-};
-
 export type MensajeDelHilo = {
   id: string;
   direccion: "in" | "out";
@@ -64,7 +49,6 @@ export type MensajeDelHilo = {
   tipo: string;
   estado: string;
   creadoEn: string;
-  media: MediaDelMensaje | null;
 };
 
 export type HiloConversacion = {
