@@ -73,6 +73,22 @@ describe("describirNegocio", () => {
     expect(texto.indexOf("PREGUNTAS FRECUENTES")).toBeLessThan(posicion);
   });
 
+  /*
+   * El texto libre es el camino corto: con solo eso, el agente ya sabe de qué
+   * va el negocio. Si dejara de inyectarse, un cliente que solo rellenó ese
+   * cuadro tendría un agente que no sabe nada, sin que nada lo delatara.
+   */
+  it("con solo el texto libre ya hay contexto, y va primero", () => {
+    const texto = describirNegocio({
+      texto_libre: "Somos una clínica dental en Palma. Llevamos 12 años.",
+      descripcion: "Clínica dental.",
+    })!;
+
+    expect(texto.startsWith("Somos una clínica dental en Palma.")).toBe(true);
+    // Sin epígrafe: es la explicación, no una sección más.
+    expect(texto).not.toContain("TEXTO LIBRE");
+  });
+
   it("junta dirección y zona en una sola línea", () => {
     const texto = describirNegocio({ direccion: "Carrer de la Mar 12", zona: "Palma centro" });
     expect(texto).toContain("Carrer de la Mar 12 · Palma centro");

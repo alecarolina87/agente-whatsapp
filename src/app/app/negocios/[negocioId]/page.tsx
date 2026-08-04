@@ -106,6 +106,12 @@ export default async function PaginaNegocio({
               Probar el agente
             </Link>
             <Link
+              href={`/app/negocios/${data.id}/info`}
+              className="text-muted-foreground transition hover:text-foreground"
+            >
+              Lo que sabe
+            </Link>
+            <Link
               href={`/app/negocios/${data.id}/actividad`}
               className="text-muted-foreground transition hover:text-foreground"
             >

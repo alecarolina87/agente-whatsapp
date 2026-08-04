@@ -20,6 +20,8 @@ export type Faq = { pregunta?: string; respuesta?: string };
 export type Objecion = { objecion?: string; respuesta?: string };
 
 export type InfoNegocio = {
+  /** Lo que sea, contado a mano. Va lo primero. */
+  texto_libre?: string | null;
   descripcion?: string | null;
   servicios?: Servicio[] | null;
   horarios?: string | null;
@@ -45,6 +47,15 @@ export function describirNegocio(info: InfoNegocio | null | undefined): string |
   if (!info) return null;
 
   const partes: string[] = [];
+
+  /*
+   * El texto libre va primero y sin epígrafe.
+   *
+   * Es lo que escribe quien conoce el negocio, con sus palabras, y suele
+   * llevar el contexto que ninguna casilla recoge. Encabezarlo lo convertiría
+   * en «una sección más»; así se lee como lo que es: la explicación.
+   */
+  if (!vacio(info.texto_libre)) partes.push(info.texto_libre!.trim());
 
   if (!vacio(info.descripcion)) partes.push(`EL NEGOCIO:\n${info.descripcion!.trim()}`);
 
