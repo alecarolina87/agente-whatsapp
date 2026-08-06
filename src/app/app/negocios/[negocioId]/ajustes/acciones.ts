@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { modeloValido } from "@/lib/agent/catalogo";
 import { scoped } from "@/lib/data/scoped";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -71,6 +72,14 @@ const ajustes = z.object({
     .int()
     .min(1, "Al menos una respuesta por hora")
     .max(1000),
+  /*
+   * Vacío es una opción legítima en los dos: en el principal significa «el de
+   * la plataforma» y en el respaldo, «no reintentar». Se validan contra el
+   * catálogo y no con un `enum` de zod para que el mensaje de error sea el
+   * mismo si alguien manda un identificador a mano.
+   */
+  modelo: z.string().trim(),
+  modeloRespaldo: z.string().trim(),
 });
 
 export async function guardarAjustes(
@@ -90,11 +99,31 @@ export async function guardarAjustes(
     mensajesDeContexto: formData.get("mensajesDeContexto"),
     topeMensualUsd: formData.get("topeMensualUsd") ?? "",
     topeRespuestasHora: formData.get("topeRespuestasHora"),
+    modelo: formData.get("modelo") ?? "",
+    modeloRespaldo: formData.get("modeloRespaldo") ?? "",
   });
 
   if (!datos.success) return { error: datos.error.issues[0].message };
 
   const d = datos.data;
+
+  if (d.modelo !== "" && !modeloValido(d.modelo)) {
+    return { error: "Ese modelo ya no está disponible. Elige otro de la lista." };
+  }
+
+  if (d.modeloRespaldo !== "" && !modeloValido(d.modeloRespaldo)) {
+    return { error: "Ese modelo de respaldo ya no está disponible. Elige otro de la lista." };
+  }
+
+  /*
+   * Un respaldo igual que el principal no es un respaldo: si el modelo está
+   * caído, reintentar con él es esperar el timeout dos veces y acabar igual de
+   * mudo. Se avisa aquí en vez de aceptarlo y descartarlo en silencio, porque
+   * quien lo elige cree que se está protegiendo.
+   */
+  if (d.modeloRespaldo !== "" && d.modeloRespaldo === d.modelo) {
+    return { error: "El respaldo tiene que ser distinto del modelo principal." };
+  }
 
   // Vacío significa «sin tope», que no es lo mismo que un tope de cero: cero
   // dejaría al agente mudo desde el primer mensaje.
@@ -111,6 +140,10 @@ export async function guardarAjustes(
     mensajes_de_contexto: d.mensajesDeContexto,
     tope_mensual_usd: tope,
     tope_respuestas_hora: d.topeRespuestasHora,
+    // `null`, no cadena vacía: en la base de datos `null` significa «lo que
+    // diga la plataforma», y `''` no significaría nada.
+    modelo: d.modelo || null,
+    modelo_respaldo: d.modeloRespaldo || null,
   }).eq("id", negocioId);
 
   await db.from("channels").update({

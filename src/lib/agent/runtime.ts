@@ -9,6 +9,7 @@ import { puedeEnviarTextoLibre, superaLimiteDeMensajes } from "./guardrails";
 import { evaluarHandoff, explicarHandoff, trajoArchivo, type MotivoHandoff } from "./handoff";
 import { describirNegocio, type InfoNegocio } from "./info-negocio";
 import { comprobarLimites, explicarFreno } from "./limites";
+import { completarConRespaldo, elegirModelos } from "./modelos";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "./prompt";
 
 /**
@@ -144,9 +145,12 @@ export async function responderConversacion({
    */
   const { data: ajustes } = await db
     .from("workspaces")
-    .select("mensajes_de_contexto")
+    .select("mensajes_de_contexto, modelo, modelo_respaldo")
     .maybeSingle()
-    .overrideTypes<{ mensajes_de_contexto: number }, { merge: false }>();
+    .overrideTypes<
+      { mensajes_de_contexto: number; modelo: string | null; modelo_respaldo: string | null },
+      { merge: false }
+    >();
 
   const cuantosRecordar = ajustes?.mensajes_de_contexto ?? MENSAJES_DE_CONTEXTO;
 
@@ -234,15 +238,19 @@ export async function responderConversacion({
     handoff = { texto: canal.respuesta_a_archivos, motivo: "llego_un_archivo" };
   } else {
     const apiKeyModelo = process.env.OPENROUTER_API_KEY;
-    const modelo = process.env.OPENROUTER_DEFAULT_MODEL;
-    if (!apiKeyModelo || !modelo) {
+    const modelos = elegirModelos({
+      modelo: ajustes?.modelo ?? null,
+      modeloRespaldo: ajustes?.modelo_respaldo ?? null,
+    });
+
+    if (!apiKeyModelo || !modelos) {
       return { clase: "error", motivo: "falta la configuración de OpenRouter" };
     }
 
     try {
-      respuesta = await completarChat({
+      const intento = await completarConRespaldo({
         apiKey: apiKeyModelo,
-        modelo,
+        modelos,
         mensajes: construirMensajes({
           promptDelCanal: canal.system_prompt,
           infoDelNegocio: contextoDelNegocio,
@@ -250,9 +258,30 @@ export async function responderConversacion({
           cuantos: cuantosRecordar,
         }),
       });
+
+      respuesta = intento.respuesta;
+
+      /*
+       * El respaldo funcionando es una avería que se ha tapado sola: la clienta
+       * recibe su respuesta y no se entera de nada. Queda anotado porque si no,
+       * la única forma de descubrir que el modelo principal lleva días caído
+       * sería mirar la factura y ver que el gasto no cuadra.
+       */
+      if (intento.falloDelPrincipal) {
+        await registrar("ai.fallback_used", {
+          principal: modelos.principal,
+          respaldo: modelos.respaldo,
+          motivo: intento.falloDelPrincipal,
+        });
+      }
     } catch (causa) {
       const motivo = causa instanceof Error ? causa.message : String(causa);
-      await registrar("ai.failed", { fase: "modelo", motivo });
+      await registrar("ai.failed", {
+        fase: "modelo",
+        motivo,
+        modelo: modelos.principal,
+        respaldo: modelos.respaldo,
+      });
       return { clase: "error", motivo };
     }
 

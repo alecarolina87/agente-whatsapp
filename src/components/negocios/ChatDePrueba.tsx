@@ -22,7 +22,12 @@ import {
  */
 export function ChatDePrueba({ negocioId }: { negocioId: string }) {
   const [turnos, setTurnos] = useState<TurnoPrueba[]>([]);
-  const [costes, setCostes] = useState<Record<number, { usd: number; handoff: string | null }>>({});
+  const [costes, setCostes] = useState<
+    Record<
+      number,
+      { usd: number; handoff: string | null; modelo: string; conRespaldo: boolean }
+    >
+  >({});
   const [borrador, setBorrador] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
@@ -58,7 +63,12 @@ export function ChatDePrueba({ negocioId }: { negocioId: string }) {
         const siguiente: TurnoPrueba[] = [...t, { rol: "agente", texto: r.texto }];
         setCostes((c) => ({
           ...c,
-          [siguiente.length - 1]: { usd: r.costeUsd, handoff: r.handoff },
+          [siguiente.length - 1]: {
+            usd: r.costeUsd,
+            handoff: r.handoff,
+            modelo: r.modelo,
+            conRespaldo: r.conRespaldo,
+          },
         }));
         return siguiente;
       });
@@ -116,6 +126,14 @@ export function ChatDePrueba({ negocioId }: { negocioId: string }) {
               {costes[i] && (
                 <p className="dato mt-1.5 text-[11px] text-muted-foreground">
                   {costes[i].usd.toFixed(6)} $
+                  {/* Qué modelo contestó de verdad, no cuál está elegido: son
+                      cosas distintas en cuanto entra el respaldo, y comparar
+                      calidad sin saber cuál escribió no sirve de nada. */}
+                  {" · "}
+                  {costes[i].modelo}
+                  {costes[i].conRespaldo && (
+                    <span className="text-warning"> · falló el principal</span>
+                  )}
                   {costes[i].handoff && (
                     // En una conversación real esto habría apagado la IA. Verlo
                     // aquí evita descubrirlo con una clienta delante.

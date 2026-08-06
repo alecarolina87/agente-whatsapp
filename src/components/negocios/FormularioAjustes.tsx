@@ -7,6 +7,7 @@ import {
   guardarAjustes,
   type EstadoAjustes,
 } from "@/app/app/negocios/[negocioId]/ajustes/acciones";
+import { MODELOS } from "@/lib/agent/catalogo";
 
 /**
  * Todo lo que se puede cambiar de un negocio sin tocar la base de datos.
@@ -68,6 +69,8 @@ export function FormularioAjustes({
     mensajesDeContexto: number;
     topeMensualUsd: number | null;
     topeRespuestasHora: number;
+    modelo: string | null;
+    modeloRespaldo: string | null;
   };
 }) {
   const [estado, ejecutar] = useActionState<EstadoAjustes, FormData>(
@@ -160,6 +163,68 @@ export function FormularioAjustes({
             defaultValue={inicial.bufferSegundos}
             className={`${CLASE_CAMPO} dato max-w-32`}
           />
+        </Campo>
+      </section>
+
+      {/*
+        El modelo va en su propia sección y no entre los frenos de gasto, aunque
+        sea lo que más mueve la factura: quien entra aquí a subir la calidad de
+        las respuestas no está pensando en topes, y quien entra a recortar el
+        gasto no piensa en cambiar de modelo. Son dos visitas distintas.
+      */}
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-border bg-card/60 p-6">
+        <h2 className="text-sm font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+          Con qué modelo contesta
+        </h2>
+
+        <Campo
+          id="modelo"
+          etiqueta="Modelo"
+          ayuda="Es lo que más cambia a la vez la calidad de las respuestas y lo que cuestan. Lo gastado de verdad se ve arriba, en la ficha del negocio."
+        >
+          <select
+            id="modelo"
+            name="modelo"
+            defaultValue={inicial.modelo ?? ""}
+            className={CLASE_CAMPO}
+          >
+            <option value="">El de la plataforma</option>
+            {MODELOS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nombre} — {m.coste}
+              </option>
+            ))}
+          </select>
+        </Campo>
+
+        {/* La descripción de cada uno, fuera del desplegable: dentro de un
+            <option> no cabe y se corta justo donde empieza a servir. */}
+        <ul className="space-y-1.5 border-l-2 border-border pl-3 text-xs text-muted-foreground">
+          {MODELOS.map((m) => (
+            <li key={m.id}>
+              <span className="font-medium text-foreground">{m.nombre}:</span> {m.descripcion}
+            </li>
+          ))}
+        </ul>
+
+        <Campo
+          id="modeloRespaldo"
+          etiqueta="Si ese falla, contesta con"
+          ayuda="Los proveedores tienen días malos. Sin respaldo, el agente se calla y la clienta se queda esperando sin que nadie se entere hasta que llama."
+        >
+          <select
+            id="modeloRespaldo"
+            name="modeloRespaldo"
+            defaultValue={inicial.modeloRespaldo ?? ""}
+            className={CLASE_CAMPO}
+          >
+            <option value="">Nada: se queda sin contestar</option>
+            {MODELOS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nombre} — {m.coste}
+              </option>
+            ))}
+          </select>
         </Campo>
       </section>
 

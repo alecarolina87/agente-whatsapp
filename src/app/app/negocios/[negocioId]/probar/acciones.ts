@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { evaluarHandoff } from "@/lib/agent/handoff";
 import { describirNegocio, type InfoNegocio } from "@/lib/agent/info-negocio";
+import { completarConRespaldo, elegirModelos } from "@/lib/agent/modelos";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "@/lib/agent/prompt";
 import { scoped } from "@/lib/data/scoped";
-import { completarChat } from "@/lib/openrouter/client";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -40,6 +40,8 @@ export type ResultadoPrueba =
       handoff: string | null;
       costeUsd: number;
       modelo: string;
+      /** `true` si el modelo principal falló y contestó el de respaldo. */
+      conRespaldo: boolean;
       tokens: { entrada: number; salida: number };
     }
   | { ok: false; error: string };
@@ -53,7 +55,7 @@ export async function probarAgente(
   // Con la sesión de quien pide: si el negocio no es suyo, RLS no lo devuelve.
   const { data: negocio } = await supabase
     .from("workspaces")
-    .select("id, ia_activa, mensajes_de_contexto, tope_mensual_usd")
+    .select("id, ia_activa, mensajes_de_contexto, tope_mensual_usd, modelo, modelo_respaldo")
     .eq("id", negocioId)
     .maybeSingle()
     .overrideTypes<
@@ -62,6 +64,8 @@ export async function probarAgente(
         ia_activa: boolean;
         mensajes_de_contexto: number;
         tope_mensual_usd: number | null;
+        modelo: string | null;
+        modelo_respaldo: string | null;
       },
       { merge: false }
     >();
@@ -94,8 +98,19 @@ export async function probarAgente(
     .overrideTypes<{ system_prompt: string | null }[], { merge: false }>();
 
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const modelo = process.env.OPENROUTER_DEFAULT_MODEL;
-  if (!apiKey || !modelo) return { ok: false, error: "Falta la configuración del modelo." };
+
+  /*
+   * Los mismos modelos que en producción, respaldo incluido. Si la prueba
+   * usara el modelo de la plataforma mientras el negocio tiene otro elegido,
+   * estaría enseñando una calidad y un precio que no son los que va a recibir
+   * la clienta — y eso es peor que no poder probar.
+   */
+  const modelos = elegirModelos({
+    modelo: negocio.modelo,
+    modeloRespaldo: negocio.modelo_respaldo,
+  });
+
+  if (!apiKey || !modelos) return { ok: false, error: "Falta la configuración del modelo." };
 
   /*
    * Se reutiliza `construirMensajes`, el mismo que usa el motor de verdad. Si
@@ -121,13 +136,15 @@ export async function probarAgente(
     cuantos: negocio.mensajes_de_contexto ?? MENSAJES_DE_CONTEXTO,
   });
 
-  let respuesta;
+  let intento;
   try {
-    respuesta = await completarChat({ apiKey, modelo, mensajes });
+    intento = await completarConRespaldo({ apiKey, modelos, mensajes });
   } catch (causa) {
     const motivo = causa instanceof Error ? causa.message : String(causa);
     return { ok: false, error: `El modelo no contestó: ${motivo}` };
   }
+
+  const respuesta = intento.respuesta;
 
   // La marca de handoff se quita siempre, igual que en producción. Aquí además
   // se informa de que habría saltado: es parte de lo que se está probando.
@@ -153,6 +170,7 @@ export async function probarAgente(
       tokens_salida: respuesta.uso.salida,
       coste_usd: respuesta.uso.costeUsd,
       handoff: handoff.motivo,
+      fallo_del_principal: intento.falloDelPrincipal,
     },
   });
 
@@ -160,6 +178,7 @@ export async function probarAgente(
     ok: true,
     texto: handoff.texto,
     handoff: handoff.motivo,
+    conRespaldo: intento.falloDelPrincipal !== null,
     // OpenRouter no siempre informa del coste. Cero es honesto aquí: significa
     // «no lo sabemos», y las cifras que sí llegan siguen sumando bien.
     costeUsd: respuesta.uso.costeUsd ?? 0,

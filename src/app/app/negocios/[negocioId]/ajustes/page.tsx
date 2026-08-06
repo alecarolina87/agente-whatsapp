@@ -14,6 +14,8 @@ type FilaNegocio = {
   mensajes_de_contexto: number;
   tope_mensual_usd: number | null;
   tope_respuestas_hora: number;
+  modelo: string | null;
+  modelo_respaldo: string | null;
   channels:
     | { phone_number: string; status: string; system_prompt: string | null; respuesta_a_archivos: string }[]
     | null;
@@ -31,6 +33,7 @@ export default async function PaginaAjustes({
     .from("workspaces")
     .select(
       "id, name, buffer_segundos, mensajes_de_contexto, tope_mensual_usd, tope_respuestas_hora, " +
+        "modelo, modelo_respaldo, " +
         "channels(phone_number, status, system_prompt, respuesta_a_archivos)",
     )
     .eq("id", negocioId)
@@ -72,6 +75,8 @@ export default async function PaginaAjustes({
           mensajesDeContexto: data.mensajes_de_contexto,
           topeMensualUsd: data.tope_mensual_usd,
           topeRespuestasHora: data.tope_respuestas_hora,
+          modelo: data.modelo,
+          modeloRespaldo: data.modelo_respaldo,
         }}
       />
     </div>

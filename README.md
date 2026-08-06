@@ -67,6 +67,13 @@ justificarlo.
 YCloud; procesarla dispararía otra respuesta, y otra, pagando una llamada al
 modelo en cada vuelta.
 
+**Cada negocio elige su modelo, y con cuál sigue si ese falla.** Lo primero es
+una palanca de precio: un negocio que solo confirma citas no necesita lo mismo
+que una clínica que responde dudas de ortodoncia. Lo segundo es una avería —
+sin respaldo, un mal día del proveedor deja al agente mudo y nadie se entera
+hasta que una clienta llama. Un modelo retirado del catálogo no rompe nada: ese
+negocio vuelve al de la plataforma.
+
 ## Cómo está montado
 
 ```
@@ -79,7 +86,7 @@ src/app/app/inbox/  la bandeja
 supabase/migrations/ esquema, RLS, grants, Vault, realtime, límites, buffer, negocios
 ```
 
-**123 tests.** No cubren por cubrir: cazaron un límite de respuestas que contaba
+**135 tests.** No cubren por cubrir: cazaron un límite de respuestas que contaba
 por workspace en vez de por conversación —un contacto hablador habría callado
 al agente para todos los demás clientes— y una forma de pedir un humano que la
 lista no reconocía.
