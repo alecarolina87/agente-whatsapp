@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+
+import { comprobarWebhookDelNegocio } from "@/app/app/negocios/acciones";
 
 /**
  * La dirección que hay que pegar en YCloud.
@@ -19,6 +21,10 @@ export function UrlWebhook({
   conectado: boolean;
 }) {
   const [copiado, setCopiado] = useState(false);
+  const [comprobacion, setComprobacion] = useState<{ ok: boolean; mensaje: string } | null>(
+    null,
+  );
+  const [comprobando, iniciar] = useTransition();
 
   // En el primer render del servidor no hay `window`; queda vacío un instante.
   const url =
@@ -69,6 +75,43 @@ export function UrlWebhook({
         >
           {copiado ? "Copiada" : "Copiar"}
         </button>
+      </div>
+
+      {/*
+        Comprobar que está pegada, y no deducirlo.
+
+        Es el único paso del alta que ocurre fuera de esta plataforma, y su
+        fallo es silencioso: el mensaje llega a YCloud y se queda ahí, sin error
+        en ninguna parte. Sin este botón, te enteras cuando un cliente llama
+        diciendo que nadie le contestó.
+      */}
+      <div className="mt-4 space-y-2">
+        <button
+          type="button"
+          disabled={comprobando || !url}
+          onClick={() =>
+            iniciar(async () => {
+              setComprobacion(null);
+              setComprobacion(await comprobarWebhookDelNegocio(negocioId, url));
+            })
+          }
+          className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs transition hover:bg-muted disabled:opacity-50"
+        >
+          {comprobando ? "Preguntando a YCloud…" : "Comprobar si está pegada"}
+        </button>
+
+        {comprobacion && (
+          <p
+            role="status"
+            className={`rounded-[var(--radius-control)] border px-3 py-2 text-xs ${
+              comprobacion.ok
+                ? "border-success/40 bg-success/10 text-success"
+                : "border-warning/40 bg-warning/10 text-warning"
+            }`}
+          >
+            {comprobacion.mensaje}
+          </p>
+        )}
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">

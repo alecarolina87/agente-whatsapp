@@ -25,6 +25,82 @@ const TIMEOUT_MS = 10_000;
 
 export type NumeroDeLaCuenta = { telefono: string; nombre: string | null };
 
+export type EstadoWebhook =
+  | { ok: true; pegado: boolean; activo: boolean; urlesConfiguradas: string[] }
+  | { ok: false; motivo: string };
+
+/**
+ * Comprueba si la URL de este negocio está pegada en su cuenta de YCloud.
+ *
+ * ## Por qué importa tanto
+ *
+ * Es el único paso del alta que ocurre **fuera** de esta plataforma, y su fallo
+ * no da error en ninguna parte: el mensaje llega a YCloud y se queda ahí. El
+ * negocio aparece configurado, la clienta ve su mensaje enviado, y nadie
+ * contesta. Te enteras cuando el cliente llama.
+ *
+ * Se comprueba mirando los webhooks de su cuenta en vez de deducirlo de si
+ * alguna vez llegó un mensaje, que era lo que se hacía antes: eso no distingue
+ * «está bien puesto» de «está puesto pero todavía no ha escrito nadie».
+ */
+export async function comprobarWebhook({
+  apiKey,
+  urlEsperada,
+}: {
+  apiKey: string;
+  urlEsperada: string;
+}): Promise<EstadoWebhook> {
+  if (!apiKey.trim()) return { ok: false, motivo: "Falta la API Key." };
+
+  let respuesta: Response;
+
+  try {
+    respuesta = await fetch(`${BASE}/webhookEndpoints?limit=50`, {
+      headers: { "X-API-Key": apiKey },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (error) {
+    const causa = error instanceof Error ? error.message : "desconocida";
+    return { ok: false, motivo: `No se pudo conectar con YCloud (${causa}).` };
+  }
+
+  if (respuesta.status === 401 || respuesta.status === 403) {
+    return { ok: false, motivo: "La API Key no es válida o no tiene permiso." };
+  }
+
+  if (!respuesta.ok) return { ok: false, motivo: `YCloud respondió ${respuesta.status}.` };
+
+  let cuerpo: unknown;
+  try {
+    cuerpo = await respuesta.json();
+  } catch {
+    return { ok: false, motivo: "YCloud devolvió algo que no se pudo leer." };
+  }
+
+  const items = ((cuerpo as { items?: unknown[] })?.items ?? []) as {
+    url?: string;
+    status?: string;
+  }[];
+
+  // Se comparan sin la barra final: `…/abc` y `…/abc/` son el mismo sitio y
+  // YCloud guarda lo que se pegara.
+  const limpiar = (u: string) => u.trim().replace(/\/+$/, "").toLowerCase();
+  const buscada = limpiar(urlEsperada);
+
+  const coincidencias = items.filter((e) => e.url && limpiar(e.url) === buscada);
+
+  return {
+    ok: true,
+    pegado: coincidencias.length > 0,
+    /*
+     * Pegado y activo son cosas distintas. En este proyecto ya pasó: el webhook
+     * estaba configurado y desactivado a mano, y desde fuera parecía correcto.
+     */
+    activo: coincidencias.some((e) => e.status === "active"),
+    urlesConfiguradas: items.flatMap((e) => (e.url ? [e.url] : [])),
+  };
+}
+
 export type ResultadoVerificacion =
   | {
       ok: true;

@@ -7,7 +7,8 @@ import { z } from "zod";
 
 import { COOKIE_NEGOCIO } from "@/lib/data/negocios";
 import { createClient } from "@/lib/supabase/server";
-import { comprobarCredenciales } from "@/lib/ycloud/verificar";
+import { leerSecreto } from "@/lib/vault";
+import { comprobarCredenciales, comprobarWebhook } from "@/lib/ycloud/verificar";
 
 /**
  * Alta de un negocio y cambio entre negocios.
@@ -182,4 +183,65 @@ export async function validarClavesYCloud({
         : `La clave funciona. Números en la cuenta: ${numeros.join(", ")}.`,
     numeros,
   };
+}
+
+/**
+ * Comprueba si la URL de este negocio está pegada en su cuenta de YCloud.
+ *
+ * Es el único paso del alta que ocurre fuera de la plataforma, y su fallo es
+ * silencioso: el mensaje llega a YCloud y se queda ahí, sin error en ninguna
+ * parte. Este botón lo convierte en algo que se puede confirmar en el momento,
+ * en vez de descubrirlo cuando un cliente llama diciendo que nadie le contestó.
+ */
+export async function comprobarWebhookDelNegocio(
+  negocioId: string,
+  urlEsperada: string,
+): Promise<{ ok: boolean; mensaje: string }> {
+  const supabase = await createClient();
+
+  // Con la sesión de quien pide: si el negocio no es suyo, RLS no lo devuelve.
+  const { data: canales } = await supabase
+    .from("channels")
+    .select("ycloud_credential_ref")
+    .eq("workspace_id", negocioId)
+    .limit(1)
+    .overrideTypes<{ ycloud_credential_ref: string | null }[], { merge: false }>();
+
+  const ref = canales?.[0]?.ycloud_credential_ref;
+
+  if (!ref) {
+    return {
+      ok: false,
+      mensaje: "Primero hay que conectar sus claves de YCloud en los ajustes.",
+    };
+  }
+
+  const apiKey = await leerSecreto(ref);
+  if (!apiKey) return { ok: false, mensaje: "No se encontró su clave de YCloud." };
+
+  const r = await comprobarWebhook({ apiKey, urlEsperada });
+  if (!r.ok) return { ok: false, mensaje: r.motivo };
+
+  if (!r.pegado) {
+    return {
+      ok: false,
+      mensaje:
+        r.urlesConfiguradas.length > 0
+          ? `Su URL no está en YCloud. Lo que sí hay configurado: ${r.urlesConfiguradas.join(", ")}`
+          : "Su cuenta de YCloud no tiene ningún webhook configurado. Pega la URL de arriba.",
+    };
+  }
+
+  /*
+   * Pegado y activo son cosas distintas, y aquí ya pasó: el webhook estaba
+   * puesto y desactivado a mano, y desde fuera parecía correcto.
+   */
+  if (!r.activo) {
+    return {
+      ok: false,
+      mensaje: "La URL está pegada pero el webhook está desactivado en YCloud. Actívalo.",
+    };
+  }
+
+  return { ok: true, mensaje: "La URL está pegada y el webhook está activo." };
 }
