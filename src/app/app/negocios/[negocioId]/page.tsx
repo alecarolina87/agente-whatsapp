@@ -118,6 +118,12 @@ export default async function PaginaNegocio({
               Actividad
             </Link>
             <Link
+              href={`/app/negocios/${data.id}/equipo`}
+              className="text-muted-foreground transition hover:text-foreground"
+            >
+              Equipo
+            </Link>
+            <Link
               href={`/app/negocios/${data.id}/ajustes`}
               className="text-muted-foreground transition hover:text-foreground"
             >
