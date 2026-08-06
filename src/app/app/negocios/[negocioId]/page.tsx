@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PanelDeControl } from "@/components/PanelDeControl";
+import { PuestaEnMarcha } from "@/components/negocios/PuestaEnMarcha";
 import { UrlWebhook } from "@/components/negocios/UrlWebhook";
+import { puestaEnMarcha } from "@/lib/data/puesta-en-marcha";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Negocio · Agente de WhatsApp" };
@@ -59,6 +61,8 @@ export default async function PaginaNegocio({
   // funciona con cuatro y deja de funcionar con cuatro mil.
   const { data: gastado } = await supabase.rpc("gasto_del_mes", { p_workspace_id: data.id });
 
+  const marcha = await puestaEnMarcha(data.id);
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <div>
@@ -79,6 +83,10 @@ export default async function PaginaNegocio({
           Negocio creado. Su espacio está aislado del resto desde este momento.
         </p>
       )}
+
+      {/* Lo primero: qué le falta para atender. Es la pregunta con la que
+          se abre la ficha de un cliente. */}
+      {marcha && <PuestaEnMarcha datos={marcha} />}
 
       <UrlWebhook negocioId={data.id} conectado={conectado} />
 
