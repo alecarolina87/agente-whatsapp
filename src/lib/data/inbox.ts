@@ -44,6 +44,21 @@ type FilaLista = {
   contacts: { name: string | null; wa_phone: string } | null;
 };
 
+/**
+ * Cuántas se traen de una vez.
+ *
+ * Importa más de lo que parece desde que hay buscador: **la búsqueda ocurre en
+ * el navegador, sobre lo que ya está cargado**, así que este número es también
+ * el alcance de lo que se puede encontrar. Por eso la lista dice cuántas hay en
+ * total: buscar entre 50 de 200 y no avisar sería mentir.
+ *
+ * Subirlo no es gratis. La segunda consulta —el último texto de cada
+ * conversación— trae 300 mensajes; con muchas más conversaciones, algunas se
+ * quedarían sin adelanto. El día que haga falta, lo que toca no es subir el
+ * número sino buscar en el servidor.
+ */
+export const LIMITE_LISTA = 50;
+
 /** Las conversaciones del workspace, la más reciente primero. */
 export async function listarConversaciones(
   workspaceId: string,
@@ -58,7 +73,7 @@ export async function listarConversaciones(
     .eq("workspace_id", workspaceId)
     .eq("status", "open")
     .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(50)
+    .limit(LIMITE_LISTA)
     .overrideTypes<FilaLista[], { merge: false }>();
 
   if (!data?.length) return [];
@@ -91,7 +106,10 @@ export async function listarConversaciones(
        * pareciera una conversación vacía justo cuando es la que más urge
        * mirar. El adelanto dice qué llegó.
        */
-      textoPorConversacion.set(m.conversation_id, m.text || ETIQUETA_SIN_TEXTO[m.type] || null);
+      textoPorConversacion.set(
+        m.conversation_id,
+        m.text || ETIQUETA_SIN_TEXTO[m.type] || null,
+      );
     }
   }
 
@@ -119,7 +137,9 @@ export async function cargarHilo(
 
   const { data: conversacion } = await supabase
     .from("conversations")
-    .select("id, state, ai_enabled, window_expires_at, contacts(name, wa_phone)")
+    .select(
+      "id, state, ai_enabled, window_expires_at, contacts(name, wa_phone)",
+    )
     .eq("workspace_id", workspaceId)
     .eq("id", conversacionId)
     .maybeSingle()
@@ -183,7 +203,10 @@ export async function cargarHilo(
  * De momento se coge el primero: con un solo cliente sobra. Cuando alguien
  * pertenezca a varios habrá que elegirlo, y ese selector es F4.
  */
-export async function workspaceActual(): Promise<{ id: string; nombre: string } | null> {
+export async function workspaceActual(): Promise<{
+  id: string;
+  nombre: string;
+} | null> {
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -194,4 +217,26 @@ export async function workspaceActual(): Promise<{ id: string; nombre: string } 
     .overrideTypes<{ id: string; name: string }, { merge: false }>();
 
   return data ? { id: data.id, nombre: data.name } : null;
+}
+
+/**
+ * Cuántas conversaciones abiertas hay en total.
+ *
+ * Existe solo para poder decir la verdad en el buscador. La lista trae las
+ * `LIMITE_LISTA` más recientes y la búsqueda funciona sobre esas; sin este
+ * número, quien busca a alguien de hace tres meses y no lo encuentra concluiría
+ * que no está — cuando lo que pasa es que no se ha cargado.
+ */
+export async function contarConversaciones(
+  workspaceId: string,
+): Promise<number> {
+  const supabase = await createClient();
+
+  const { count } = await supabase
+    .from("conversations")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .eq("status", "open");
+
+  return count ?? 0;
 }
