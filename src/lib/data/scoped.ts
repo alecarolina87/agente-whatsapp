@@ -46,6 +46,7 @@ const TABLAS_CON_WORKSPACE = [
   "processed_events",
   "events",
   "business_info",
+  "templates",
 ] as const;
 
 export type TablaConWorkspace = (typeof TABLAS_CON_WORKSPACE)[number];

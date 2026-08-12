@@ -10,8 +10,20 @@ import { normalizarE164 } from "./normalize";
  * integración en funcionamiento.
  */
 
-/** Único tipo de evento que procesa F1. */
+/** Un mensaje de un cliente. */
 export const EVENTO_MENSAJE_ENTRANTE = "whatsapp.inbound_message.received";
+
+/**
+ * Meta ha revisado una plantilla: la aprueba o la rechaza.
+ *
+ * Sin esto, la aprobación no llega sola y hay que acordarse de pulsar un botón
+ * de sincronizar — que es lo que hace el fork. En la práctica significa que
+ * Meta aprueba una plantilla a las dos horas y el negocio se entera al día
+ * siguiente, si se acuerda.
+ *
+ * Contrato en `SPIKE-ycloud.md` §2.c.
+ */
+export const EVENTO_PLANTILLA_REVISADA = "whatsapp.template.reviewed";
 
 /**
  * Valores que admite `msg_type_enum` en la base de datos.
@@ -105,7 +117,38 @@ const esquemaEvento = z.object({
       sticker: esquemaAdjunto.optional(),
     })
     .optional(),
+  /*
+   * La plantilla revisada por Meta. Va suelta en la raíz, igual que el mensaje
+   * entrante, y **no trae nuestro identificador**: se localiza por nombre e
+   * idioma (ver `RevisionPlantilla`).
+   */
+  whatsappTemplate: z
+    .looseObject({
+      name: z.string().min(1),
+      language: z.string().optional(),
+      status: z.string().optional(),
+      reason: z.string().nullish(),
+    })
+    .optional(),
 });
+
+/**
+ * Lo que Meta dice de una plantilla.
+ *
+ * **No hay identificador nuestro ni del proveedor en el evento** — solo nombre
+ * e idioma. Por eso `(workspace, nombre, idioma)` es único en la tabla: sin esa
+ * restricción, una aprobación actualizaría una fila al azar.
+ */
+export type RevisionPlantilla = {
+  eventoId: string;
+  nombre: string;
+  idioma: string;
+  /** Estado tal cual lo manda Meta, sin traducir. */
+  estado: string;
+  /** Por qué la rechazaron. `null` si la aprobaron. */
+  motivo: string | null;
+  creadoEn: string;
+};
 
 export type AdjuntoEntrante = {
   /** Identificador del archivo en YCloud. */
@@ -145,6 +188,7 @@ export type MensajeEntrante = {
  */
 export type ResultadoParseo =
   | { clase: "mensaje"; mensaje: MensajeEntrante }
+  | { clase: "plantilla_revisada"; revision: RevisionPlantilla }
   | { clase: "ignorado"; motivo: string }
   | { clase: "malformado"; motivo: string };
 
@@ -154,7 +198,13 @@ export function parsearEntrante(cuerpo: unknown): ResultadoParseo {
     return { clase: "malformado", motivo: "el evento no tiene la forma esperada" };
   }
 
-  const { id, type, createTime, whatsappInboundMessage: wim } = evento.data;
+  const {
+    id,
+    type,
+    createTime,
+    whatsappInboundMessage: wim,
+    whatsappTemplate: plantilla,
+  } = evento.data;
 
   /*
    * Los ecos son los mensajes que hemos enviado nosotros, devueltos por YCloud.
@@ -165,8 +215,33 @@ export function parsearEntrante(cuerpo: unknown): ResultadoParseo {
     return { clase: "ignorado", motivo: "eco de un mensaje saliente" };
   }
 
-  // YCloud manda también eventos de estado (enviado, entregado, leído). En F1
-  // no se usan; llegarán en F2 para actualizar `messages.status`.
+  /*
+   * Meta ha revisado una plantilla. Va antes del descarte general porque es el
+   * único aviso que se recibe: si se ignorara, la plantilla se quedaría
+   * «pendiente» para siempre aunque estuviera aprobada, y el negocio no podría
+   * usarla sin saber por qué.
+   */
+  if (type === EVENTO_PLANTILLA_REVISADA) {
+    if (!plantilla) {
+      return { clase: "malformado", motivo: "falta whatsappTemplate" };
+    }
+
+    return {
+      clase: "plantilla_revisada",
+      revision: {
+        eventoId: id,
+        nombre: plantilla.name,
+        idioma: plantilla.language ?? "es",
+        estado: plantilla.status ?? "PENDING",
+        motivo: plantilla.reason ?? null,
+        creadoEn: createTime ?? new Date().toISOString(),
+      },
+    };
+  }
+
+  // YCloud manda también eventos de estado (enviado, entregado, leído) y otros
+  // sobre la cuenta. Ignorarlos es correcto: devolver error haría que YCloud
+  // reintentara algo que nunca vamos a querer.
   if (type !== EVENTO_MENSAJE_ENTRANTE) {
     return { clase: "ignorado", motivo: `tipo de evento no tratado: ${type}` };
   }

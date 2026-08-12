@@ -4,6 +4,7 @@ import { encolarEnLote } from "@/lib/agent/buffer";
 import { calcularCaducidadVentana } from "@/lib/agent/guardrails";
 import { scoped } from "@/lib/data/scoped";
 import { leerSecreto } from "@/lib/vault";
+import { traducirEstado } from "@/lib/ycloud/plantillas";
 import { parsearEntrante } from "@/lib/ycloud/types";
 import { verificarFirma } from "@/lib/ycloud/verify";
 
@@ -182,6 +183,50 @@ export async function POST(
     // 200 a propósito: reintentar no va a arreglar un cuerpo que no entendemos,
     // y un 4xx repetido hace que YCloud acabe desactivando el webhook.
     return Response.json({ ok: true, ignorado: parseado.motivo });
+  }
+
+  /*
+   * Meta ha revisado una plantilla.
+   *
+   * Se atiende aquí, en el mismo webhook que los mensajes, y no con un botón de
+   * «sincronizar». La diferencia se nota en el uso real: con el botón, Meta
+   * aprueba una plantilla a las dos horas y el negocio se entera al día
+   * siguiente — si se acuerda de pulsarlo.
+   *
+   * El evento **no trae nuestro identificador**, solo nombre e idioma. Por eso
+   * la tabla tiene `unique (workspace_id, name, language)`: sin esa
+   * restricción, esta actualización tocaría una fila al azar.
+   */
+  if (parseado.clase === "plantilla_revisada") {
+    const { revision } = parseado;
+    const estado = traducirEstado(revision.estado);
+
+    const { error: fallo } = await db
+      .from("templates")
+      .update({
+        status: estado,
+        rejection_reason: revision.motivo,
+        reviewed_at: revision.creadoEn,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("name", revision.nombre)
+      .eq("language", revision.idioma);
+
+    await db.from("events").insert({
+      type: "template.reviewed",
+      actor: "system",
+      payload: {
+        nombre: revision.nombre,
+        idioma: revision.idioma,
+        estado,
+        // El motivo del rechazo sí se guarda: es lo único que dice qué
+        // arreglar, y sin él hay que adivinar por qué Meta dijo que no.
+        motivo: revision.motivo,
+        ...(fallo ? { fallo: fallo.message } : {}),
+      },
+    });
+
+    return Response.json({ ok: true, plantilla: revision.nombre, estado });
   }
 
   const mensaje = parseado.mensaje;

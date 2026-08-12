@@ -83,6 +83,18 @@ export async function puestaEnMarcha(negocioId: string): Promise<PuestaEnMarcha 
     .select("id", { count: "exact", head: true })
     .eq("workspace_id", negocioId);
 
+  /*
+   * Va como recomendable y no como imprescindible a propósito: un negocio sin
+   * plantillas atiende perfectamente a quien le escribe. Lo que no puede es
+   * dar el primer paso ni recordar nada — y eso hay que decirlo antes de que
+   * una clínica lo descubra el día que le toca recordar veinte citas.
+   */
+  const { count: plantillasAprobadas } = await supabase
+    .from("templates")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", negocioId)
+    .eq("status", "approved");
+
   const base = `/app/negocios/${negocioId}`;
 
   const pasos: Paso[] = [
@@ -123,6 +135,15 @@ export async function puestaEnMarcha(negocioId: string): Promise<PuestaEnMarcha 
       consecuencia: "Está parado con el freno de mano: recibe mensajes pero no contesta.",
       hecho: negocio.ia_activa,
       enlace: base,
+    },
+    {
+      id: "plantillas",
+      titulo: "Puede escribir pasadas 24 h",
+      consecuencia:
+        "Sin ninguna plantilla aprobada por Meta, nadie puede escribir a quien lleve más de 24 h sin contestar. Ni el agente ni una persona: no hay recordatorios de cita.",
+      hecho: (plantillasAprobadas ?? 0) > 0,
+      opcional: true,
+      enlace: `${base}/plantillas`,
     },
     {
       id: "tope",

@@ -122,6 +122,67 @@ de `processed_events` y **nunca produce una segunda respuesta**.
 
 ---
 
+## 2.c Plantillas — el contrato para escribir fuera de las 24 h
+
+Verificado en la documentación de YCloud el 12/08/2026, no deducido del fork.
+
+### Crear una plantilla
+
+```
+POST /v2/whatsapp/templates
+```
+
+| Campo | Notas |
+|---|---|
+| `wabaId` | **No lo guardamos.** Se resuelve desde el número con `GET /whatsapp/phoneNumbers`, que ya usamos para verificar credenciales |
+| `name` | **Solo minúsculas, números y guiones bajos.** Máx. 512. Es la trampa más fácil: «Recordatorio de cita» no vale |
+| `language` | Código de idioma, `es` |
+| `category` | `AUTHENTICATION` · `MARKETING` · `UTILITY` |
+| `components` | `BODY` obligatorio; `HEADER`, `FOOTER` (máx. 60 caracteres) y `BUTTONS` opcionales |
+
+Estados posibles: `PENDING`, `APPROVED`, `REJECTED`, `PAUSED`, `DISABLED`,
+`ARCHIVED`, `IN_APPEAL`, `DELETED`.
+
+### El aviso de que Meta la ha revisado
+
+**Este es el hallazgo que cambia el diseño.** YCloud manda un evento cuando Meta
+aprueba o rechaza:
+
+```
+event.type  ===  "whatsapp.template.reviewed"
+```
+
+El contenido va en **`event.whatsappTemplate`**, con `name`, `language`,
+`status`, `reason` (por qué la rechazaron) y `statusUpdateEvent`.
+
+También existen `whatsapp.template.category_updated` y
+`whatsapp.template.quality_updated`, que por ahora no se atienden.
+
+**El fork no escucha ninguno de los tres.** Sincroniza a mano, con un botón, así
+que Meta aprueba una plantilla a las dos horas y el negocio se entera al día
+siguiente. Nosotros lo recibimos por el mismo webhook que los mensajes.
+
+**Aviso de diseño que sale de leer el payload:** el evento identifica la
+plantilla por `wabaId` + `name` + `language`, **no** por nuestro identificador
+ni por el de la plantilla en el proveedor. Así que hay que buscarla por
+`(workspace, nombre, idioma)`, y eso obliga a que esa terna sea única en
+nuestra tabla. El identificador del workspace no viene en el evento — lo da la
+URL, que ya es por workspace (§2.b). Con un webhook compartido esto no se
+podría resolver.
+
+### Listar, como respaldo
+
+```
+GET /v2/whatsapp/templates?limit=100&filter.status=APPROVED,PENDING
+```
+
+Devuelve `{ items: [...] }` paginado (`page` 1-based, `limit` máx. 100). Hace
+falta igualmente aunque haya webhook: si un evento se pierde —endpoint caído,
+despliegue a mitad—, sin una forma de reconciliar la plantilla se queda
+«pendiente» para siempre.
+
+---
+
 ## 2.b Una URL de webhook por workspace
 
 **Cada workspace tiene su propia URL de webhook, con su identificador dentro.**

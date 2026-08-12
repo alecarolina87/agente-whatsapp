@@ -230,3 +230,62 @@ describe("traducirTipo", () => {
     expect(traducirTipo(undefined)).toBe("text");
   });
 });
+
+describe("plantillas revisadas por Meta", () => {
+  const evento = (extra: Record<string, unknown> = {}) => ({
+    id: "evt_1",
+    type: "whatsapp.template.reviewed",
+    createTime: "2026-08-12T10:00:00Z",
+    whatsappTemplate: {
+      wabaId: "waba_1",
+      name: "recordatorio_de_cita",
+      language: "es",
+      status: "APPROVED",
+      ...extra,
+    },
+  });
+
+  it("reconoce la aprobación", () => {
+    const r = parsearEntrante(evento());
+
+    expect(r.clase).toBe("plantilla_revisada");
+    if (r.clase !== "plantilla_revisada") return;
+
+    expect(r.revision.nombre).toBe("recordatorio_de_cita");
+    expect(r.revision.idioma).toBe("es");
+    expect(r.revision.estado).toBe("APPROVED");
+    expect(r.revision.motivo).toBeNull();
+  });
+
+  /*
+   * El motivo del rechazo es lo único que dice qué arreglar. Perderlo obliga a
+   * adivinar por qué Meta dijo que no, que es exactamente lo que hace que la
+   * gente reenvíe la misma plantilla tres veces.
+   */
+  it("conserva el motivo cuando la rechazan", () => {
+    const r = parsearEntrante(evento({ status: "REJECTED", reason: "INVALID_FORMAT" }));
+
+    expect(r.clase).toBe("plantilla_revisada");
+    if (r.clase !== "plantilla_revisada") return;
+
+    expect(r.revision.estado).toBe("REJECTED");
+    expect(r.revision.motivo).toBe("INVALID_FORMAT");
+  });
+
+  it("un evento de plantilla sin plantilla está malformado, no ignorado", () => {
+    const r = parsearEntrante({ id: "evt_2", type: "whatsapp.template.reviewed" });
+
+    // Ignorarlo dejaría la plantilla «pendiente» para siempre sin dejar rastro.
+    expect(r.clase).toBe("malformado");
+  });
+
+  it("los otros eventos de plantilla se ignoran, no rompen", () => {
+    const r = parsearEntrante({
+      id: "evt_3",
+      type: "whatsapp.template.quality_updated",
+      whatsappTemplate: { name: "x", language: "es" },
+    });
+
+    expect(r.clase).toBe("ignorado");
+  });
+});
