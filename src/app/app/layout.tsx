@@ -29,7 +29,10 @@ export default async function LayoutApp({
 
   if (!user) redirect("/entrar");
 
-  const [negocios, actual] = await Promise.all([listarNegocios(), negocioActual()]);
+  const [negocios, actual] = await Promise.all([
+    listarNegocios(),
+    negocioActual(),
+  ]);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -52,14 +55,24 @@ export default async function LayoutApp({
 
         <div className="flex flex-wrap items-center gap-4">
           {actual && (
-            <Link
-              href="/app/inbox"
-              className="text-sm text-muted-foreground transition hover:text-foreground"
-            >
-              Bandeja
-            </Link>
+            <>
+              <Link
+                href="/app/inbox"
+                className="text-sm text-muted-foreground transition hover:text-foreground"
+              >
+                Bandeja
+              </Link>
+              <Link
+                href="/app/contactos"
+                className="text-sm text-muted-foreground transition hover:text-foreground"
+              >
+                Contactos
+              </Link>
+            </>
           )}
-          <span className="dato text-sm text-muted-foreground">{user.email}</span>
+          <span className="dato text-sm text-muted-foreground">
+            {user.email}
+          </span>
           <form action={cerrarSesion}>
             <button
               type="submit"
