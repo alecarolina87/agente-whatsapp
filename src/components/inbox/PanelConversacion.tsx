@@ -3,12 +3,22 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
-import { alternarIA, enviarComoHumano, marcarLeida } from "@/app/app/inbox/acciones";
+import {
+  alternarIA,
+  enviarComoHumano,
+  marcarLeida,
+} from "@/app/app/inbox/acciones";
 import { createClient } from "@/lib/supabase/client";
 import type { HiloConversacion } from "@/lib/data/inbox-tipos";
+import type { Plantilla } from "@/lib/plantillas/estados";
 
 import { Adjunto, esArchivo } from "./Adjunto";
-import { AvisoHandoff, EstadoVentana } from "./EstadoVentana";
+import { EnviarPlantilla } from "./EnviarPlantilla";
+import {
+  AvisoHandoff,
+  EstadoVentana,
+  useVentanaCerrada,
+} from "./EstadoVentana";
 
 /**
  * El hilo de una conversación, con el interruptor y el cuadro de escribir.
@@ -20,12 +30,28 @@ import { AvisoHandoff, EstadoVentana } from "./EstadoVentana";
  * Los datos iniciales llegan ya renderizados desde el servidor, así que la
  * conversación se ve completa antes de que el navegador ejecute nada.
  */
-export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
+export function PanelConversacion({
+  hilo,
+  plantillas,
+  negocioId,
+}: {
+  hilo: HiloConversacion;
+  /** Las aprobadas por Meta: son las únicas que se pueden enviar. */
+  plantillas: Plantilla[];
+  negocioId: string | null;
+}) {
   const router = useRouter();
   const [pendiente, iniciar] = useTransition();
   const [borrador, setBorrador] = useState("");
   const [error, setError] = useState<string | null>(null);
   const finDelHilo = useRef<HTMLDivElement>(null);
+
+  /*
+   * `null` en el render del servidor, donde no hay reloj. Mientras tanto se
+   * enseña el cuadro de escribir: es lo que había antes y lo más común con
+   * diferencia. Al montar, el reloj decide y cambia si hace falta.
+   */
+  const ventanaCerrada = useVentanaCerrada(hilo.ventanaCaducaEn);
 
   // Al abrir y con cada mensaje nuevo, al final del hilo.
   useEffect(() => {
@@ -87,7 +113,9 @@ export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
           <p className="text-sm font-medium">
             {hilo.contacto.nombre ?? "Sin nombre"}
           </p>
-          <p className="dato text-xs text-muted-foreground">{hilo.contacto.telefono}</p>
+          <p className="dato text-xs text-muted-foreground">
+            {hilo.contacto.telefono}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -120,7 +148,9 @@ export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
 
       <div className="flex-1 space-y-3 overflow-y-auto px-5 py-5">
         {hilo.mensajes.length === 0 && (
-          <p className="text-sm text-muted-foreground">Todavía no hay mensajes.</p>
+          <p className="text-sm text-muted-foreground">
+            Todavía no hay mensajes.
+          </p>
         )}
 
         {hilo.mensajes.map((m) => (
@@ -160,7 +190,9 @@ export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
                 <p className="whitespace-pre-wrap">{m.texto}</p>
               ) : (
                 !esArchivo(m.tipo) && (
-                  <p className="dato text-xs text-muted-foreground">[{m.tipo}]</p>
+                  <p className="dato text-xs text-muted-foreground">
+                    [{m.tipo}]
+                  </p>
                 )
               )}
               <p className="dato mt-1 text-[11px] text-muted-foreground">
@@ -179,36 +211,54 @@ export function PanelConversacion({ hilo }: { hilo: HiloConversacion }) {
       <div className="border-t border-border px-5 py-3.5">
         {error && <p className="mb-2 text-xs text-destructive">{error}</p>}
 
-        {hilo.iaActiva && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            Si escribes, la IA se pausa automáticamente en esta conversación.
-          </p>
-        )}
-
-        <div className="flex items-end gap-2">
-          <textarea
-            value={borrador}
-            onChange={(e) => setBorrador(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter envía, Mayús+Enter hace salto de línea: como WhatsApp.
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                enviar();
-              }
-            }}
-            rows={2}
-            placeholder="Escribe un mensaje…"
-            className="flex-1 resize-none rounded-[var(--radius-control)] border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-primary"
+        {/*
+          Con la ventana cerrada se cambia el cuadro de texto por el selector de
+          plantillas, en vez de dejarlo y que falle al enviar. Enseñar un cuadro
+          donde no se puede escribir es invitar a escribir un mensaje entero
+          para luego decir que no.
+        */}
+        {ventanaCerrada ? (
+          <EnviarPlantilla
+            conversacionId={hilo.id}
+            negocioId={negocioId}
+            plantillas={plantillas}
+            nombreDelContacto={hilo.contacto.nombre}
           />
-          <button
-            type="button"
-            onClick={enviar}
-            disabled={pendiente || !borrador.trim()}
-            className="rounded-[var(--radius-control)] bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition disabled:opacity-40"
-          >
-            {pendiente ? "Enviando…" : "Enviar"}
-          </button>
-        </div>
+        ) : (
+          <>
+            {hilo.iaActiva && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Si escribes, la IA se pausa automáticamente en esta
+                conversación.
+              </p>
+            )}
+
+            <div className="flex items-end gap-2">
+              <textarea
+                value={borrador}
+                onChange={(e) => setBorrador(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter envía, Mayús+Enter hace salto de línea: como WhatsApp.
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    enviar();
+                  }
+                }}
+                rows={2}
+                placeholder="Escribe un mensaje…"
+                className="flex-1 resize-none rounded-[var(--radius-control)] border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                onClick={enviar}
+                disabled={pendiente || !borrador.trim()}
+                className="rounded-[var(--radius-control)] bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition disabled:opacity-40"
+              >
+                {pendiente ? "Enviando…" : "Enviar"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

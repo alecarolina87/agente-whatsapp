@@ -58,7 +58,11 @@ const esquema = z.object({
     .trim()
     .min(1, "El mensaje no puede estar vacío")
     .max(1024, "Meta no acepta cuerpos de más de 1024 caracteres"),
-  pie: z.string().trim().max(60, "El pie no puede pasar de 60 caracteres").optional(),
+  pie: z
+    .string()
+    .trim()
+    .max(60, "El pie no puede pasar de 60 caracteres")
+    .optional(),
 });
 
 export async function guardarBorrador(
@@ -88,7 +92,9 @@ export async function guardarBorrador(
    * saberlo — pero sí tiene que **ver** el nombre resultante, porque es el que
    * aparecerá en los errores de Meta. Por eso se devuelve como aviso.
    */
-  const nombre = NOMBRE_VALIDO.test(d.nombre) ? d.nombre : sugerirNombre(d.nombre);
+  const nombre = NOMBRE_VALIDO.test(d.nombre)
+    ? d.nombre
+    : sugerirNombre(d.nombre);
 
   if (!nombre) {
     return { error: "Ese nombre no deja ninguna letra ni número utilizable." };
@@ -120,7 +126,11 @@ export async function guardarBorrador(
   await db.from("events").insert({
     type: "template.created",
     actor: "human",
-    payload: { nombre, categoria: d.categoria, variables: contarVariables(d.cuerpo) },
+    payload: {
+      nombre,
+      categoria: d.categoria,
+      variables: contarVariables(d.cuerpo),
+    },
   });
 
   revalidatePath(`/app/negocios/${negocioId}/plantillas`);
@@ -152,7 +162,9 @@ export async function enviarARevisar(
 
   const { data: plantilla } = await db
     .from("templates")
-    .select("id, name, language, category, header_text, body, footer_text, status")
+    .select(
+      "id, name, language, category, header_text, body, footer_text, status",
+    )
     .eq("id", plantillaId)
     .maybeSingle()
     .overrideTypes<
@@ -174,7 +186,9 @@ export async function enviarARevisar(
   // Solo tiene sentido mandar lo que no está en revisión. Reenviar una
   // pendiente no la acelera; reenviar una aprobada crea un duplicado.
   if (!["local", "rejected"].includes(plantilla.status)) {
-    return { error: "Solo se pueden enviar las que están sin enviar o rechazadas." };
+    return {
+      error: "Solo se pueden enviar las que están sin enviar o rechazadas.",
+    };
   }
 
   const { data: canal } = await db
@@ -182,7 +196,11 @@ export async function enviarARevisar(
     .select("phone_number, ycloud_credential_ref, status")
     .limit(1)
     .overrideTypes<
-      { phone_number: string; ycloud_credential_ref: string | null; status: string }[],
+      {
+        phone_number: string;
+        ycloud_credential_ref: string | null;
+        status: string;
+      }[],
       { merge: false }
     >();
 
@@ -199,7 +217,10 @@ export async function enviarARevisar(
   if (!apiKey) return { error: "No se pudieron leer las claves de YCloud." };
 
   try {
-    const wabaId = await buscarWabaId({ apiKey, telefono: primero.phone_number });
+    const wabaId = await buscarWabaId({
+      apiKey,
+      telefono: primero.phone_number,
+    });
 
     const resultado = await crearPlantilla({
       apiKey,
@@ -241,7 +262,8 @@ export async function enviarARevisar(
      * está mal: un «no se pudo enviar» genérico obliga a adivinar, y aquí
      * adivinar cuesta otra ronda de revisión de Meta.
      */
-    const motivo = causa instanceof ErrorYCloud ? causa.message : "Error inesperado";
+    const motivo =
+      causa instanceof ErrorYCloud ? causa.message : "Error inesperado";
 
     await db.from("events").insert({
       type: "template.submit_failed",
@@ -260,7 +282,9 @@ export async function enviarARevisar(
  * endpoint caído, un despliegue justo en ese momento—, sin esto la plantilla se
  * queda «pendiente» para siempre y nadie sabe por qué.
  */
-export async function reconciliarEstados(negocioId: string): Promise<EstadoAccion> {
+export async function reconciliarEstados(
+  negocioId: string,
+): Promise<EstadoAccion> {
   if (!(await puedeGestionar(negocioId))) {
     return { error: "No tienes permiso para cambiar este negocio." };
   }
@@ -285,7 +309,10 @@ export async function reconciliarEstados(negocioId: string): Promise<EstadoAccio
   if (!apiKey) return { error: "No se pudieron leer las claves de YCloud." };
 
   try {
-    const wabaId = await buscarWabaId({ apiKey, telefono: primero.phone_number });
+    const wabaId = await buscarWabaId({
+      apiKey,
+      telefono: primero.phone_number,
+    });
     const remotas = await listarPlantillas({ apiKey, wabaId });
 
     for (const remota of remotas) {
@@ -309,9 +336,13 @@ export async function reconciliarEstados(negocioId: string): Promise<EstadoAccio
     }
 
     revalidatePath(`/app/negocios/${negocioId}/plantillas`);
-    return { ok: true, aviso: `Comprobadas ${remotas.length} plantillas en YCloud.` };
+    return {
+      ok: true,
+      aviso: `Comprobadas ${remotas.length} plantillas en YCloud.`,
+    };
   } catch (causa) {
-    const motivo = causa instanceof ErrorYCloud ? causa.message : "Error inesperado";
+    const motivo =
+      causa instanceof ErrorYCloud ? causa.message : "Error inesperado";
     return { error: motivo };
   }
 }

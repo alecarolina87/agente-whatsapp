@@ -36,14 +36,16 @@ export const NOMBRE_VALIDO = /^[a-z0-9_]{1,512}$/;
  * en los mensajes de error de Meta.
  */
 export function sugerirNombre(titulo: string): string {
-  return titulo
-    .toLowerCase()
-    .normalize("NFD")
-    // Quita los acentos: `á` → `a`. Meta no los acepta.
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 512);
+  return (
+    titulo
+      .toLowerCase()
+      .normalize("NFD")
+      // Quita los acentos: `á` → `a`. Meta no los acepta.
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 512)
+  );
 }
 
 /**
@@ -94,7 +96,11 @@ function botonAYCloud(boton: Boton) {
     case "url":
       return { type: "URL", text: boton.texto, url: boton.url };
     case "telefono":
-      return { type: "PHONE_NUMBER", text: boton.texto, phone_number: boton.telefono };
+      return {
+        type: "PHONE_NUMBER",
+        text: boton.texto,
+        phone_number: boton.telefono,
+      };
   }
 }
 
@@ -103,7 +109,11 @@ export function construirComponentes(borrador: BorradorPlantilla) {
   const componentes: Record<string, unknown>[] = [];
 
   if (borrador.cabecera?.trim()) {
-    componentes.push({ type: "HEADER", format: "TEXT", text: borrador.cabecera.trim() });
+    componentes.push({
+      type: "HEADER",
+      format: "TEXT",
+      text: borrador.cabecera.trim(),
+    });
   }
 
   // El cuerpo es el único obligatorio para Meta.
@@ -114,7 +124,10 @@ export function construirComponentes(borrador: BorradorPlantilla) {
   }
 
   if (borrador.botones?.length) {
-    componentes.push({ type: "BUTTONS", buttons: borrador.botones.map(botonAYCloud) });
+    componentes.push({
+      type: "BUTTONS",
+      buttons: borrador.botones.map(botonAYCloud),
+    });
   }
 
   return componentes;
@@ -325,7 +338,11 @@ export async function enviarPlantilla({
   idioma: string;
   /** Un valor por cada `{{n}}` del cuerpo, en orden. */
   valores: string[];
-}): Promise<{ wamid: string | null; id: string | null; status: string | null }> {
+}): Promise<{
+  wamid: string | null;
+  id: string | null;
+  status: string | null;
+}> {
   const componentes = valores.length
     ? [
         {

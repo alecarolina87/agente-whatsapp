@@ -58,6 +58,9 @@ export const EXPLICACION: Record<
   paused: { texto: "Meta la pausó por baja calidad", tono: "mal" },
   disabled: { texto: "Meta la desactivó", tono: "mal" },
   archived: { texto: "Archivada", tono: "espera" },
-  in_appeal: { texto: "Recurrida: Meta la está mirando otra vez", tono: "espera" },
+  in_appeal: {
+    texto: "Recurrida: Meta la está mirando otra vez",
+    tono: "espera",
+  },
   deleted: { texto: "Borrada", tono: "mal" },
 };

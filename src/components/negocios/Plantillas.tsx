@@ -56,7 +56,8 @@ function Ficha({
   const [error, setError] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const explicacion = EXPLICACION[plantilla.status];
-  const enviable = plantilla.status === "local" || plantilla.status === "rejected";
+  const enviable =
+    plantilla.status === "local" || plantilla.status === "rejected";
 
   return (
     <li className="rounded-[var(--radius-card)] border border-border bg-card/60 p-5">
@@ -65,7 +66,8 @@ function Ficha({
           <p className="dato text-sm font-medium">{plantilla.name}</p>
           <p className="dato mt-0.5 text-xs text-muted-foreground">
             {plantilla.category} · {plantilla.language}
-            {plantilla.variable_count > 0 && ` · ${plantilla.variable_count} variables`}
+            {plantilla.variable_count > 0 &&
+              ` · ${plantilla.variable_count} variables`}
           </p>
         </div>
 
@@ -81,7 +83,9 @@ function Ficha({
       )}
       <p className="mt-1 text-sm whitespace-pre-wrap">{plantilla.body}</p>
       {plantilla.footer_text && (
-        <p className="mt-1 text-xs text-muted-foreground">{plantilla.footer_text}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {plantilla.footer_text}
+        </p>
       )}
 
       {/* El motivo del rechazo es lo único que dice qué arreglar. Sin él, la
@@ -193,7 +197,8 @@ export function Plantillas({
       {!conectado && (
         <p className="rounded-[var(--radius-card)] border border-warning/40 bg-warning/5 px-4 py-3 text-sm text-warning">
           Este negocio todavía no tiene conectadas sus claves de YCloud. Puedes
-          escribir plantillas, pero no se pueden mandar a revisar hasta que lo esté.
+          escribir plantillas, pero no se pueden mandar a revisar hasta que lo
+          esté.
         </p>
       )}
 
@@ -203,8 +208,9 @@ export function Plantillas({
             Escribir una plantilla
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Esto no le llega a nadie todavía. Se escribe aquí, la revisa Meta —de
-            minutos a un par de días— y solo cuando la aprueban se puede usar.
+            Esto no le llega a nadie todavía. Se escribe aquí, la revisa Meta
+            —de minutos a un par de días— y solo cuando la aprueban se puede
+            usar.
           </p>
         </div>
 
@@ -222,7 +228,8 @@ export function Plantillas({
             />
             <p className="text-xs text-muted-foreground">
               Es interno: lo ves tú, no la clienta. Meta solo acepta minúsculas,
-              números y guiones bajos, así que si escribes otra cosa se ajusta solo.
+              números y guiones bajos, así que si escribes otra cosa se ajusta
+              solo.
             </p>
           </div>
 
@@ -230,14 +237,22 @@ export function Plantillas({
             <label htmlFor="categoria" className="block text-sm font-medium">
               Para qué es
             </label>
-            <select id="categoria" name="categoria" defaultValue="utility" className={CLASE_CAMPO}>
-              <option value="utility">Aviso o gestión — recordar una cita, confirmar algo</option>
+            <select
+              id="categoria"
+              name="categoria"
+              defaultValue="utility"
+              className={CLASE_CAMPO}
+            >
+              <option value="utility">
+                Aviso o gestión — recordar una cita, confirmar algo
+              </option>
               <option value="marketing">Promoción — ofertas, novedades</option>
               <option value="authentication">Código de verificación</option>
             </select>
             <p className="text-xs text-muted-foreground">
               Meta es mucho más estricta con las de promoción, y al cliente le
-              cuestan más caras. Si es un recordatorio, no lo marques como promoción.
+              cuestan más caras. Si es un recordatorio, no lo marques como
+              promoción.
             </p>
           </div>
 
@@ -245,7 +260,12 @@ export function Plantillas({
             <label htmlFor="cabecera" className="block text-sm font-medium">
               Título <span className="text-muted-foreground">(opcional)</span>
             </label>
-            <input id="cabecera" name="cabecera" maxLength={60} className={CLASE_CAMPO} />
+            <input
+              id="cabecera"
+              name="cabecera"
+              maxLength={60}
+              className={CLASE_CAMPO}
+            />
           </div>
 
           <div className="space-y-1.5">
@@ -263,15 +283,18 @@ export function Plantillas({
             />
             <p className="text-xs text-muted-foreground">
               Con <code className="dato">{"{{1}}"}</code>,{" "}
-              <code className="dato">{"{{2}}"}</code>… dejas huecos que se rellenan
-              al enviar: el nombre, la fecha. Cuidado: hay que dar un valor para
-              cada hueco, o Meta rechaza el mensaje entero.
+              <code className="dato">{"{{2}}"}</code>… dejas huecos que se
+              rellenan al enviar: el nombre, la fecha. Cuidado: hay que dar un
+              valor para cada hueco, o Meta rechaza el mensaje entero.
             </p>
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="pie" className="block text-sm font-medium">
-              Pie <span className="text-muted-foreground">(opcional, 60 caracteres)</span>
+              Pie{" "}
+              <span className="text-muted-foreground">
+                (opcional, 60 caracteres)
+              </span>
             </label>
             <input id="pie" name="pie" maxLength={60} className={CLASE_CAMPO} />
           </div>
@@ -324,7 +347,9 @@ export function Plantillas({
               }
               className="dato text-xs text-muted-foreground transition hover:text-foreground disabled:opacity-50"
             >
-              {sincronizando ? "Preguntando a YCloud…" : "Volver a comprobar el estado"}
+              {sincronizando
+                ? "Preguntando a YCloud…"
+                : "Volver a comprobar el estado"}
             </button>
           )}
         </div>
@@ -340,8 +365,8 @@ export function Plantillas({
 
         {plantillas.length === 0 ? (
           <p className="rounded-[var(--radius-card)] border border-border bg-card/60 px-4 py-6 text-center text-sm text-muted-foreground">
-            Todavía no hay ninguna. Sin plantillas aprobadas, este negocio no puede
-            escribir a nadie que lleve más de 24 h sin contestar.
+            Todavía no hay ninguna. Sin plantillas aprobadas, este negocio no
+            puede escribir a nadie que lleve más de 24 h sin contestar.
           </p>
         ) : (
           <ul className="space-y-3">

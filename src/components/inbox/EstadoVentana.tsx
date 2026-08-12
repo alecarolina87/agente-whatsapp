@@ -76,6 +76,33 @@ export function EstadoVentana({
   );
 }
 
+/**
+ * ¿Está cerrada la ventana ahora mismo?
+ *
+ * Comparte el reloj con la insignia a propósito: si cada uno mirara la hora por
+ * su cuenta, podrían discrepar durante un minuto — la insignia diciendo
+ * «cerrada» y el cuadro de texto dejando escribir, o al revés. Un minuto basta
+ * para mandar un mensaje que Meta rechaza.
+ *
+ * Una ventana **desconocida** cuenta como cerrada, igual que en el servidor: no
+ * saber si se puede escribir no es permiso para hacerlo.
+ *
+ * @returns `null` en el render del servidor, donde todavía no hay reloj.
+ */
+export function useVentanaCerrada(caducaEn: string | null): boolean | null {
+  const ahora = useSyncExternalStore(
+    suscribirAlReloj,
+    ahoraRedondeado,
+    sinRelojEnElServidor,
+  );
+
+  if (ahora === null) return null;
+  if (!caducaEn) return true;
+
+  const restante = new Date(caducaEn).getTime() - ahora;
+  return Number.isNaN(restante) || restante <= 0;
+}
+
 function calcular(caducaEn: string | null, ahora: number | null) {
   const ayuda = caducaEn
     ? `Se puede escribir libremente hasta ${new Date(caducaEn).toLocaleString("es-ES")}`

@@ -22,7 +22,9 @@ const CAMPOS =
   "id, name, language, category, status, header_text, body, footer_text, " +
   "variable_count, rejection_reason, submitted_at, reviewed_at, created_at";
 
-export async function listarPlantillasDelNegocio(negocioId: string): Promise<Plantilla[]> {
+export async function listarPlantillasDelNegocio(
+  negocioId: string,
+): Promise<Plantilla[]> {
   const db = scoped(negocioId);
 
   const { data } = await db
@@ -41,7 +43,9 @@ export async function listarPlantillasDelNegocio(negocioId: string): Promise<Pla
  * hace que Meta rechace el mensaje entero: la clienta no recibe nada y en la
  * bandeja aparece un fallo que no explica gran cosa.
  */
-export async function plantillasAprobadas(negocioId: string): Promise<Plantilla[]> {
+export async function plantillasAprobadas(
+  negocioId: string,
+): Promise<Plantilla[]> {
   const db = scoped(negocioId);
 
   const { data } = await db
