@@ -16,11 +16,31 @@ export const metadata = { title: "Mis negocios · Agente de WhatsApp" };
 export default async function PaginaNegocios() {
   const negocios = await listarNegocios();
 
+  /*
+   * El resumen de todos juntos. Existe porque la pregunta con la que se abre
+   * esto no es «cómo va Dental One», es **«¿me necesita alguien, en alguno?»**.
+   * Con dos clientes se ve leyendo la lista; con diez, no.
+   */
+  const totales = negocios.reduce(
+    (suma, n) => ({
+      esperando: suma.esperando + n.esperando,
+      abiertas: suma.abiertas + n.abiertas,
+      mensajesHoy: suma.mensajesHoy + n.mensajesHoy,
+      gastado: suma.gastado + n.gastado,
+      // Un canal caído no atiende a nadie aunque el negocio parezca dado de
+      // alta. Es el fallo más caro porque desde fuera no se nota.
+      sinConectar: suma.sinConectar + (n.canal?.estado === "active" ? 0 : 1),
+    }),
+    { esperando: 0, abiertas: 0, mensajesHoy: 0, gastado: 0, sinConectar: 0 },
+  );
+
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Mis negocios</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Mis negocios
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {negocios.length === 0
               ? "Todavía no llevas ninguno."
@@ -38,12 +58,48 @@ export default async function PaginaNegocios() {
         </Link>
       </div>
 
+      {/*
+        El resumen va antes que la lista y solo con más de un negocio: con uno
+        solo repetiría lo que dice su propia tarjeta justo debajo.
+      */}
+      {negocios.length > 1 && (
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Dato
+            valor={totales.esperando}
+            etiqueta={totales.esperando === 1 ? "te espera" : "te esperan"}
+            // Lo único accionable de las cuatro cifras. En ámbar cuando hay
+            // alguien; apagado cuando no, para que no cante en falso.
+            tono={totales.esperando > 0 ? "aviso" : "normal"}
+          />
+          <Dato valor={totales.mensajesHoy} etiqueta="mensajes hoy" />
+          <Dato valor={totales.abiertas} etiqueta="conversaciones abiertas" />
+          <Dato
+            valor={`${totales.gastado.toFixed(2)} $`}
+            etiqueta="gastado este mes"
+          />
+        </section>
+      )}
+
+      {/*
+        Un canal sin conectar no recibe nada, y con varios clientes es fácil
+        que pase desapercibido en la lista. Aquí se dice una vez, arriba.
+      */}
+      {totales.sinConectar > 0 && (
+        <p className="rounded-[var(--radius-control)] border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {totales.sinConectar === 1
+            ? "Hay 1 negocio con WhatsApp sin conectar: no está recibiendo nada."
+            : `Hay ${totales.sinConectar} negocios con WhatsApp sin conectar: no están recibiendo nada.`}
+        </p>
+      )}
+
       {negocios.length === 0 ? (
         <div className="rounded-[var(--radius-card)] border border-dashed border-border px-6 py-12 text-center">
-          <p className="text-sm font-medium">Empieza dando de alta tu primer negocio.</p>
+          <p className="text-sm font-medium">
+            Empieza dando de alta tu primer negocio.
+          </p>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            Un negocio es un cliente tuyo: su número de WhatsApp, su agente con su
-            personalidad, y sus conversaciones separadas de las de los demás.
+            Un negocio es un cliente tuyo: su número de WhatsApp, su agente con
+            su personalidad, y sus conversaciones separadas de las de los demás.
           </p>
         </div>
       ) : (
@@ -65,7 +121,8 @@ export default async function PaginaNegocios() {
                   <div className="flex flex-wrap items-center gap-2">
                     {n.esperando > 0 && (
                       <span className="dato rounded-full bg-warning/15 px-2.5 py-1 text-xs text-warning">
-                        {n.esperando} te {n.esperando === 1 ? "espera" : "esperan"}
+                        {n.esperando} te{" "}
+                        {n.esperando === 1 ? "espera" : "esperan"}
                       </span>
                     )}
 
@@ -91,8 +148,12 @@ export default async function PaginaNegocios() {
 
                 <div className="dato mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
                   <span>
-                    {n.abiertas} {n.abiertas === 1 ? "conversación" : "conversaciones"}
+                    {n.abiertas}{" "}
+                    {n.abiertas === 1 ? "conversación" : "conversaciones"}
                   </span>
+                  {/* Hoy, no el mes. Con 400 mensajes este mes y 0 hoy, lo que
+                      hay que mirar es si el webhook sigue en pie. */}
+                  <span>{n.mensajesHoy} hoy</span>
                   <span>
                     {/* Cuatro decimales porque una respuesta cuesta ~0,0006 $:
                         con dos, todo el trabajo del mes se vería como 0,00. */}
@@ -105,6 +166,41 @@ export default async function PaginaNegocios() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * Una cifra del resumen.
+ *
+ * El número grande y la etiqueta pequeña debajo, no al revés: en un vistazo de
+ * treinta segundos se lee el número y solo se busca la etiqueta si sorprende.
+ */
+function Dato({
+  valor,
+  etiqueta,
+  tono = "normal",
+}: {
+  valor: number | string;
+  etiqueta: string;
+  tono?: "normal" | "aviso";
+}) {
+  return (
+    <div
+      className={`rounded-[var(--radius-card)] border p-4 ${
+        tono === "aviso"
+          ? "border-warning/40 bg-warning/10"
+          : "border-border bg-card/60"
+      }`}
+    >
+      <p
+        className={`dato text-2xl font-semibold ${
+          tono === "aviso" ? "text-warning" : ""
+        }`}
+      >
+        {valor}
+      </p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{etiqueta}</p>
     </div>
   );
 }

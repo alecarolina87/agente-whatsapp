@@ -33,6 +33,14 @@ export type NegocioListado = {
   esperando: number;
   /** Conversaciones abiertas. */
   abiertas: number;
+  /**
+   * Mensajes de hoy, entrantes y salientes.
+   *
+   * Es el dato que delata que algo se ha roto. Un negocio con 400 mensajes este
+   * mes y 0 hoy puede tener el webhook caído desde ayer, y la cifra del mes
+   * seguiría estando estupenda.
+   */
+  mensajesHoy: number;
 };
 
 type FilaWorkspace = {
@@ -56,7 +64,9 @@ export async function listarNegocios(): Promise<NegocioListado[]> {
 
   const { data } = await supabase
     .from("workspaces")
-    .select("id, name, slug, ia_activa, tope_mensual_usd, channels(phone_number, status)")
+    .select(
+      "id, name, slug, ia_activa, tope_mensual_usd, channels(phone_number, status)",
+    )
     .order("created_at", { ascending: true })
     .overrideTypes<FilaWorkspace[], { merge: false }>();
 
@@ -72,17 +82,35 @@ export async function listarNegocios(): Promise<NegocioListado[]> {
     .select("workspace_id, state, ai_enabled, unread_count")
     .eq("status", "open")
     .overrideTypes<
-      { workspace_id: string; state: string; ai_enabled: boolean; unread_count: number }[],
+      {
+        workspace_id: string;
+        state: string;
+        ai_enabled: boolean;
+        unread_count: number;
+      }[],
       { merge: false }
     >();
 
-  const gastos = await Promise.all(
+  /*
+   * Gasto del mes y mensajes de hoy, los dos en Postgres y en paralelo. Son dos
+   * llamadas por negocio, pero cada una devuelve **un número**: hacerlo en la
+   * aplicación obligaría a traerse los mensajes de todos los clientes para
+   * contarlos aquí.
+   */
+  const resumenes = await Promise.all(
     data.map(async (w) => {
-      const { data: gastado } = await supabase.rpc("gasto_del_mes", { p_workspace_id: w.id });
-      return [w.id, Number(gastado ?? 0)] as const;
+      const [gasto, hoy] = await Promise.all([
+        supabase.rpc("gasto_del_mes", { p_workspace_id: w.id }),
+        supabase.rpc("mensajes_de_hoy", { p_workspace_id: w.id }),
+      ]);
+
+      return [
+        w.id,
+        { gastado: Number(gasto.data ?? 0), hoy: Number(hoy.data ?? 0) },
+      ] as const;
     }),
   );
-  const gastoPorNegocio = new Map(gastos);
+  const resumenPorNegocio = new Map(resumenes);
 
   return data.map((w) => {
     const suyas = (conversaciones ?? []).filter((c) => c.workspace_id === w.id);
@@ -93,14 +121,17 @@ export async function listarNegocios(): Promise<NegocioListado[]> {
       slug: w.slug,
       iaActiva: w.ia_activa,
       topeMensualUsd: w.tope_mensual_usd,
-      gastado: gastoPorNegocio.get(w.id) ?? 0,
+      gastado: resumenPorNegocio.get(w.id)?.gastado ?? 0,
+      mensajesHoy: resumenPorNegocio.get(w.id)?.hoy ?? 0,
       // Un canal por negocio: es lo que asume el webhook, que falla
       // ruidosamente si encuentra dos activos.
       canal: w.channels?.[0]
         ? { telefono: w.channels[0].phone_number, estado: w.channels[0].status }
         : null,
       esperando: suyas.filter(
-        (c) => c.state === "handoff_pending" || (!c.ai_enabled && c.unread_count > 0),
+        (c) =>
+          c.state === "handoff_pending" ||
+          (!c.ai_enabled && c.unread_count > 0),
       ).length,
       abiertas: suyas.length,
     };
@@ -119,7 +150,10 @@ export async function listarNegocios(): Promise<NegocioListado[]> {
  * Sin cookie válida se coge el primero, para que la aplicación nunca quede en
  * blanco esperando una elección que la mayoría de las veces es obvia.
  */
-export async function negocioActual(): Promise<{ id: string; nombre: string } | null> {
+export async function negocioActual(): Promise<{
+  id: string;
+  nombre: string;
+} | null> {
   const supabase = await createClient();
   const elegido = (await cookies()).get(COOKIE)?.value;
 
