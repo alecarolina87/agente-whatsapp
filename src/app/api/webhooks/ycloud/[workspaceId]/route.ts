@@ -2,6 +2,7 @@ import { after } from "next/server";
 
 import { encolarEnLote } from "@/lib/agent/buffer";
 import { calcularCaducidadVentana } from "@/lib/agent/guardrails";
+import { dispararEvento } from "@/lib/automatizaciones/motor";
 import { scoped } from "@/lib/data/scoped";
 import { leerSecreto } from "@/lib/vault";
 import { traducirEstado } from "@/lib/ycloud/plantillas";
@@ -296,6 +297,30 @@ export async function POST(
   let conversacionId: string | undefined = abiertas?.[0]?.id;
 
   /*
+   * ¿Es la primera vez que este número escribe?
+   *
+   * Se pregunta solo cuando no hay conversación abierta, que es cuando puede
+   * serlo, y se pregunta por **todas** sus conversaciones, no solo las
+   * abiertas: alguien que escribió en enero y cuya conversación se cerró no es
+   * nuevo, aunque hoy vaya a abrir una nueva.
+   *
+   * Sirve para el disparador «escribe por primera vez». Se calcula aquí porque
+   * dentro de un momento habrá una conversación y la respuesta ya sería otra.
+   */
+  let esSuPrimeraVez = false;
+
+  if (!conversacionId) {
+    const { data: anteriores } = await db
+      .from("conversations")
+      .select("id")
+      .eq("contact_id", contacto.id)
+      .limit(1)
+      .overrideTypes<FilaConId[], { merge: false }>();
+
+    esSuPrimeraVez = (anteriores ?? []).length === 0;
+  }
+
+  /*
    * La ventana de 24 h se abre aquí. Sin esto el guardrail leería `null` y el
    * agente se abstendría siempre: es lo que convierte "el contacto ha escrito"
    * en "se le puede contestar".
@@ -381,6 +406,24 @@ export async function POST(
         ms_hasta_ack: msHastaAck,
       },
     });
+
+    /*
+     * Las automatizaciones de evento, también después del acuse. Poner una
+     * etiqueta es rápido, pero «rápido» y «dentro de los dos segundos que
+     * YCloud espera» no son lo mismo, y pasarse de ahí provoca un reintento —
+     * es decir, el mismo mensaje otra vez.
+     */
+    if (esSuPrimeraVez) {
+      await dispararEvento({
+        workspaceId,
+        disparador: "primer_mensaje",
+        conversacionId,
+        contactoId: contacto.id,
+        // La ocasión es el contacto: por definición esto pasa una sola vez, y
+        // así queda claro en el historial a quién se refiere.
+        referencia: `contacto:${contacto.id}`,
+      });
+    }
   });
 
   /*

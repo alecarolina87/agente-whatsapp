@@ -1,10 +1,7 @@
 import "server-only";
 
 import { scoped } from "@/lib/data/scoped";
-import type {
-  DefinicionHerramienta,
-  LlamadaHerramienta,
-} from "@/lib/openrouter/client";
+import type { DefinicionHerramienta } from "@/lib/openrouter/client";
 
 import { HERRAMIENTAS, buscarHerramienta, estaCompleta } from "./catalogo";
 

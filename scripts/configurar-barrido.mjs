@@ -1,7 +1,9 @@
 /**
  * Le dice al cron de Supabase a qué URL tiene que llamar.
  *
- * El barrido del buffer (`20260802220000_barrido.sql`) vive dentro de la base
+ * Son dos crons: el del buffer (cada minuto, para contestar) y el de las
+ * automatizaciones (cada diez, para los recordatorios). Los dos viven dentro de
+ * la base
  * de datos, pero la URL de producción no se puede saber hasta haber desplegado.
  * Este script cierra ese hueco.
  *
@@ -33,10 +35,19 @@ const db = createClient(
   { auth: { persistSession: false } },
 );
 
-const url = `${urlBase.replace(/\/$/, "")}/api/internal/flush`;
+const base = urlBase.replace(/\/$/, "");
+const url = `${base}/api/internal/flush`;
+const urlAutomatizaciones = `${base}/api/internal/automatizaciones`;
 
+/*
+ * El secreto es uno solo para los dos endpoints internos. No es pereza: son la
+ * misma superficie —trabajo de fondo de la plataforma, disparado por su propio
+ * cron— y dos secretos que rotar en vez de uno serían dos oportunidades de
+ * dejarse uno a medias.
+ */
 for (const [nombre, valor] of [
   ["plataforma:flush:url", url],
+  ["plataforma:automatizaciones:url", urlAutomatizaciones],
   ["plataforma:flush:secreto", secreto],
 ]) {
   const { error } = await db.rpc("guardar_secreto", { p_nombre: nombre, p_valor: valor });
@@ -48,12 +59,17 @@ for (const [nombre, valor] of [
   console.log(`Guardado en Vault: ${nombre}`);
 }
 
-console.log(`\nEl cron llamará cada minuto a:\n  ${url}`);
+console.log(`\nCada minuto:      ${url}`);
+console.log(`Cada 10 minutos:  ${urlAutomatizaciones}`);
 
-// Se dispara una vez a mano para no esperar al minuto y ver si responde.
-const { error } = await db.rpc("barrer_buffer");
-console.log(
-  error
-    ? `\nLa prueba falló: ${error.message}`
-    : "\nBarrido lanzado a mano sin error. Comprueba en la app que llegó la petición.",
-);
+// Se disparan una vez a mano para no esperar al cron y ver si responden.
+for (const funcion of ["barrer_buffer", "barrer_automatizaciones"]) {
+  const { error } = await db.rpc(funcion);
+  console.log(
+    error
+      ? `\n${funcion}: la prueba falló — ${error.message}`
+      : `\n${funcion}: lanzado a mano sin error.`,
+  );
+}
+
+console.log("\nComprueba en los logs de la app que llegaron las peticiones.");
