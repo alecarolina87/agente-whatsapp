@@ -62,14 +62,34 @@ for (const [nombre, valor] of [
 console.log(`\nCada minuto:      ${url}`);
 console.log(`Cada 10 minutos:  ${urlAutomatizaciones}`);
 
-// Se disparan una vez a mano para no esperar al cron y ver si responden.
-for (const funcion of ["barrer_buffer", "barrer_automatizaciones"]) {
-  const { error } = await db.rpc(funcion);
-  console.log(
-    error
-      ? `\n${funcion}: la prueba falló — ${error.message}`
-      : `\n${funcion}: lanzado a mano sin error.`,
-  );
-}
+/*
+ * Se prueban los endpoints, no las funciones de la base.
+ *
+ * Antes esto llamaba a `barrer_buffer()` por RPC y siempre respondía
+ * «permission denied» — porque la migración le quita el permiso a todo el
+ * mundo a propósito, y el service-role hereda de PUBLIC. El cron sí puede
+ * (corre como el dueño de la función), así que aquel fallo no significaba nada:
+ * era una prueba que no se podía pasar, avisando de una avería que no existía.
+ *
+ * Llamar al endpoint con el secreto hace exactamente lo que hará el cron dentro
+ * de un minuto, y si algo está mal se ve aquí.
+ */
+console.log("");
 
-console.log("\nComprueba en los logs de la app que llegaron las peticiones.");
+for (const [nombre, destino] of [
+  ["buffer", url],
+  ["automatizaciones", urlAutomatizaciones],
+]) {
+  try {
+    const respuesta = await fetch(destino, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-secret": secreto },
+      body: "{}",
+    });
+
+    const cuerpo = await respuesta.text();
+    console.log(`${nombre}: ${respuesta.status} — ${cuerpo.slice(0, 200)}`);
+  } catch (causa) {
+    console.log(`${nombre}: no respondió — ${causa.message}`);
+  }
+}
