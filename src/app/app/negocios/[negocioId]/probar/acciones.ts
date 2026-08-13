@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { evaluarHandoff } from "@/lib/agent/handoff";
 import { describirNegocio, type InfoNegocio } from "@/lib/agent/info-negocio";
-import { completarConRespaldo, elegirModelos } from "@/lib/agent/modelos";
+import { conversar } from "@/lib/agent/conversar";
+import { herramientasDelNegocio } from "@/lib/agent/herramientas";
+import { elegirModelos } from "@/lib/agent/modelos";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "@/lib/agent/prompt";
 import { scoped } from "@/lib/data/scoped";
 import { createClient } from "@/lib/supabase/server";
@@ -42,6 +44,8 @@ export type ResultadoPrueba =
       modelo: string;
       /** `true` si el modelo principal falló y contestó el de respaldo. */
       conRespaldo: boolean;
+      /** Qué capacidades usó el agente para contestar. */
+      herramientasUsadas: string[];
       tokens: { entrada: number; salida: number };
     }
   | { ok: false; error: string };
@@ -55,7 +59,9 @@ export async function probarAgente(
   // Con la sesión de quien pide: si el negocio no es suyo, RLS no lo devuelve.
   const { data: negocio } = await supabase
     .from("workspaces")
-    .select("id, ia_activa, mensajes_de_contexto, tope_mensual_usd, modelo, modelo_respaldo")
+    .select(
+      "id, ia_activa, mensajes_de_contexto, tope_mensual_usd, modelo, modelo_respaldo",
+    )
     .eq("id", negocioId)
     .maybeSingle()
     .overrideTypes<
@@ -79,13 +85,21 @@ export async function probarAgente(
    * de atrás que vacía justo el bolsillo que el tope protege.
    */
   if (!negocio.ia_activa) {
-    return { ok: false, error: "El agente de este negocio está parado. Reanúdalo para probarlo." };
+    return {
+      ok: false,
+      error: "El agente de este negocio está parado. Reanúdalo para probarlo.",
+    };
   }
 
   if (negocio.tope_mensual_usd !== null) {
-    const { data: gastado } = await supabase.rpc("gasto_del_mes", { p_workspace_id: negocioId });
+    const { data: gastado } = await supabase.rpc("gasto_del_mes", {
+      p_workspace_id: negocioId,
+    });
     if (Number(gastado ?? 0) >= negocio.tope_mensual_usd) {
-      return { ok: false, error: "Este negocio ha llegado a su tope de gasto del mes." };
+      return {
+        ok: false,
+        error: "Este negocio ha llegado a su tope de gasto del mes.",
+      };
     }
   }
 
@@ -110,7 +124,8 @@ export async function probarAgente(
     modeloRespaldo: negocio.modelo_respaldo,
   });
 
-  if (!apiKey || !modelos) return { ok: false, error: "Falta la configuración del modelo." };
+  if (!apiKey || !modelos)
+    return { ok: false, error: "Falta la configuración del modelo." };
 
   /*
    * Se reutiliza `construirMensajes`, el mismo que usa el motor de verdad. Si
@@ -136,9 +151,16 @@ export async function probarAgente(
     cuantos: negocio.mensajes_de_contexto ?? MENSAJES_DE_CONTEXTO,
   });
 
+  /*
+   * Las mismas capacidades que en producción. Si la prueba no las cargara,
+   * estarías probando un agente que no es el que atiende — y justo la parte
+   * que más interesa comprobar es si sabe dar el enlace de reservas.
+   */
+  const herramientas = await herramientasDelNegocio(negocioId);
+
   let intento;
   try {
-    intento = await completarConRespaldo({ apiKey, modelos, mensajes });
+    intento = await conversar({ apiKey, modelos, mensajes, herramientas });
   } catch (causa) {
     const motivo = causa instanceof Error ? causa.message : String(causa);
     return { ok: false, error: `El modelo no contestó: ${motivo}` };
@@ -148,7 +170,9 @@ export async function probarAgente(
 
   // La marca de handoff se quita siempre, igual que en producción. Aquí además
   // se informa de que habría saltado: es parte de lo que se está probando.
-  const ultimoDelContacto = [...historial].reverse().find((t) => t.rol === "contacto")?.texto;
+  const ultimoDelContacto = [...historial]
+    .reverse()
+    .find((t) => t.rol === "contacto")?.texto;
 
   const handoff = evaluarHandoff({
     respuestaDelModelo: respuesta.texto,
@@ -171,6 +195,7 @@ export async function probarAgente(
       coste_usd: respuesta.uso.costeUsd,
       handoff: handoff.motivo,
       fallo_del_principal: intento.falloDelPrincipal,
+      herramientas: intento.herramientasUsadas,
     },
   });
 
@@ -179,6 +204,7 @@ export async function probarAgente(
     texto: handoff.texto,
     handoff: handoff.motivo,
     conRespaldo: intento.falloDelPrincipal !== null,
+    herramientasUsadas: intento.herramientasUsadas,
     // OpenRouter no siempre informa del coste. Cero es honesto aquí: significa
     // «no lo sabemos», y las cifras que sí llegan siguen sumando bien.
     costeUsd: respuesta.uso.costeUsd ?? 0,
@@ -216,10 +242,14 @@ export async function guardarPrompt(
     .update({ name: data.name })
     .eq("id", negocioId);
 
-  if (sinPermiso) return { ok: false, error: "No tienes permiso para cambiar este negocio." };
+  if (sinPermiso)
+    return { ok: false, error: "No tienes permiso para cambiar este negocio." };
 
   if (prompt.length > 8000) {
-    return { ok: false, error: "Las instrucciones no pueden pasar de 8000 caracteres." };
+    return {
+      ok: false,
+      error: "Las instrucciones no pueden pasar de 8000 caracteres.",
+    };
   }
 
   const db = scoped(negocioId);

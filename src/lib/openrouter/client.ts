@@ -27,13 +27,47 @@ const TIMEOUT_MS = 25_000;
 const MAX_TOKENS_RESPUESTA = 600;
 
 export type Mensaje = {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /**
+   * Lo que el modelo pidió llamar. Solo en mensajes del asistente.
+   *
+   * Se devuelve tal cual y se vuelve a mandar sin tocar: OpenRouter empareja
+   * la petición con su resultado por el identificador, y cualquier retoque
+   * rompe el emparejamiento.
+   */
+  tool_calls?: LlamadaHerramienta[];
+  /** Con qué llamada empareja este resultado. Solo en mensajes `tool`. */
+  tool_call_id?: string;
+};
+
+/** Una herramienta, en el formato que espera OpenRouter. */
+export type DefinicionHerramienta = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
+export type LlamadaHerramienta = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
 };
 
 export type RespuestaModelo = {
   texto: string;
   modelo: string;
+  /**
+   * Herramientas que el modelo quiere usar antes de contestar.
+   *
+   * Cuando viene con contenido, `texto` puede estar vacío **y eso es
+   * correcto**: el modelo aún no ha escrito nada porque está esperando el
+   * resultado de la herramienta.
+   */
+  llamadas: LlamadaHerramienta[];
   /** Lo que se guarda en `messages.cost` para poder medir el gasto. */
   uso: {
     entrada: number;
@@ -64,11 +98,14 @@ export async function completarChat({
   apiKey,
   modelo,
   mensajes,
+  herramientas,
   maxTokens = MAX_TOKENS_RESPUESTA,
 }: {
   apiKey: string;
   modelo: string;
   mensajes: Mensaje[];
+  /** Si se pasan, el modelo puede pedir usarlas antes de contestar. */
+  herramientas?: DefinicionHerramienta[];
   maxTokens?: number;
 }): Promise<RespuestaModelo> {
   let respuesta: Response;
@@ -84,6 +121,9 @@ export async function completarChat({
         model: modelo,
         messages: mensajes,
         max_tokens: maxTokens,
+        // Solo se manda el campo si hay algo que ofrecer: una lista vacía hace
+        // que algunos proveedores rechacen la petición.
+        ...(herramientas?.length ? { tools: herramientas } : {}),
         // Temperatura baja: esto atiende a clientes de un negocio, no escribe
         // poesía. Interesa que sea previsible y no que sorprenda.
         temperature: 0.3,
@@ -106,7 +146,10 @@ export async function completarChat({
     });
   } catch (causa) {
     const motivo = causa instanceof Error ? causa.message : String(causa);
-    throw new ErrorOpenRouter(`No se pudo contactar con OpenRouter: ${motivo}`, null);
+    throw new ErrorOpenRouter(
+      `No se pudo contactar con OpenRouter: ${motivo}`,
+      null,
+    );
   }
 
   if (!respuesta.ok) {
@@ -120,27 +163,45 @@ export async function completarChat({
 
   const datos = (await respuesta.json().catch(() => null)) as {
     model?: string;
-    choices?: { message?: { content?: string } }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+    choices?: {
+      message?: { content?: string; tool_calls?: LlamadaHerramienta[] };
+    }[];
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      cost?: number;
+    };
   } | null;
 
-  const texto = datos?.choices?.[0]?.message?.content?.trim();
+  const mensaje = datos?.choices?.[0]?.message;
+  const llamadas = mensaje?.tool_calls ?? [];
+  const texto = mensaje?.content?.trim();
 
   /*
    * Una respuesta vacía no se envía. Un WhatsApp en blanco es peor que no
    * contestar: el cliente lo ve y parece que el sistema está roto.
+   *
+   * Con herramientas hay una excepción legítima: el modelo puede contestar
+   * **solo** con la llamada, sin texto, porque todavía no sabe qué decir — está
+   * esperando el resultado. Tratarlo como error cortaría la conversación justo
+   * cuando el agente iba a ser útil.
    */
-  if (!texto) {
-    throw new ErrorOpenRouter("El modelo devolvió una respuesta vacía.", respuesta.status);
+  if (!texto && llamadas.length === 0) {
+    throw new ErrorOpenRouter(
+      "El modelo devolvió una respuesta vacía.",
+      respuesta.status,
+    );
   }
 
   return {
-    texto,
+    texto: texto ?? "",
+    llamadas,
     modelo: datos?.model ?? modelo,
     uso: {
       entrada: datos?.usage?.prompt_tokens ?? 0,
       salida: datos?.usage?.completion_tokens ?? 0,
-      costeUsd: typeof datos?.usage?.cost === "number" ? datos.usage.cost : null,
+      costeUsd:
+        typeof datos?.usage?.cost === "number" ? datos.usage.cost : null,
     },
   };
 }

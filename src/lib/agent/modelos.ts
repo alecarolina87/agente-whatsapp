@@ -1,6 +1,11 @@
 import "server-only";
 
-import { ErrorOpenRouter, completarChat, type Mensaje } from "@/lib/openrouter/client";
+import {
+  ErrorOpenRouter,
+  completarChat,
+  type DefinicionHerramienta,
+  type Mensaje,
+} from "@/lib/openrouter/client";
 
 import { modeloValido } from "./catalogo";
 
@@ -87,14 +92,22 @@ export async function completarConRespaldo({
   apiKey,
   modelos,
   mensajes,
+  herramientas,
 }: {
   apiKey: string;
   modelos: ModelosElegidos;
   mensajes: Mensaje[];
+  /** Capacidades que el modelo puede pedir usar antes de contestar. */
+  herramientas?: DefinicionHerramienta[];
 }): Promise<ResultadoConRespaldo> {
   try {
     return {
-      respuesta: await completarChat({ apiKey, modelo: modelos.principal, mensajes }),
+      respuesta: await completarChat({
+        apiKey,
+        modelo: modelos.principal,
+        mensajes,
+        herramientas,
+      }),
       falloDelPrincipal: null,
     };
   } catch (causa) {
@@ -111,7 +124,12 @@ export async function completarConRespaldo({
      * se ha quedado sin respuesta.
      */
     return {
-      respuesta: await completarChat({ apiKey, modelo: modelos.respaldo, mensajes }),
+      respuesta: await completarChat({
+        apiKey,
+        modelo: modelos.respaldo,
+        mensajes,
+        herramientas,
+      }),
       falloDelPrincipal: motivo,
     };
   }

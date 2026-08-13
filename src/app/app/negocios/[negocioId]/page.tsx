@@ -126,6 +126,12 @@ export default async function PaginaNegocio({
               Plantillas
             </Link>
             <Link
+              href={`/app/negocios/${data.id}/capacidades`}
+              className="text-muted-foreground transition hover:text-foreground"
+            >
+              Capacidades
+            </Link>
+            <Link
               href={`/app/negocios/${data.id}/actividad`}
               className="text-muted-foreground transition hover:text-foreground"
             >

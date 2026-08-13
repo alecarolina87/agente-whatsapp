@@ -6,11 +6,32 @@ import { leerSecreto } from "@/lib/vault";
 import { enviarTexto } from "@/lib/ycloud/client";
 
 import { puedeEnviarTextoLibre, superaLimiteDeMensajes } from "./guardrails";
-import { evaluarHandoff, explicarHandoff, trajoArchivo, type MotivoHandoff } from "./handoff";
+import {
+  MARCA_HANDOFF,
+  evaluarHandoff,
+  explicarHandoff,
+  trajoArchivo,
+  type MotivoHandoff,
+} from "./handoff";
 import { describirNegocio, type InfoNegocio } from "./info-negocio";
+import { conversar } from "./conversar";
+import { herramientasDelNegocio } from "./herramientas";
 import { comprobarLimites, explicarFreno } from "./limites";
-import { completarConRespaldo, elegirModelos } from "./modelos";
+import { elegirModelos } from "./modelos";
 import { MENSAJES_DE_CONTEXTO, construirMensajes } from "./prompt";
+
+/**
+ * Lo que se envía cuando el modelo se queda sin saber qué decir.
+ *
+ * Lleva la marca de handoff a propósito: así este caso recorre exactamente el
+ * mismo camino que cualquier otro traspaso —`evaluarHandoff` limpia la marca y
+ * devuelve el motivo— en vez de tener una vía propia que mantener aparte.
+ */
+const SIN_SALIDA = [
+  "Disculpa, esto prefiero que te lo confirme una compañera.",
+  "Le paso tu mensaje y te escribe enseguida.",
+  MARCA_HANDOFF,
+].join("\n");
 
 /**
  * El motor: de una conversación con un mensaje nuevo, a una respuesta enviada.
@@ -74,7 +95,10 @@ export async function responderConversacion({
     });
   };
 
-  const abstenerse = async (motivo: string, detalle: Record<string, unknown> = {}) => {
+  const abstenerse = async (
+    motivo: string,
+    detalle: Record<string, unknown> = {},
+  ) => {
     await registrar("ai.abstained", { motivo, ...detalle });
     return { clase: "abstenida", motivo } as const;
   };
@@ -93,7 +117,10 @@ export async function responderConversacion({
       .update({ state: "handoff_pending", ai_enabled: false })
       .eq("id", conversacionId);
 
-    await registrar("handoff.requested", { motivo, explicacion: explicarHandoff(motivo) });
+    await registrar("handoff.requested", {
+      motivo,
+      explicacion: explicarHandoff(motivo),
+    });
   };
 
   // ── 1. La conversación ────────────────────────────────────────────────────
@@ -104,23 +131,29 @@ export async function responderConversacion({
     .maybeSingle()
     .overrideTypes<FilaConversacion, { merge: false }>();
 
-  if (!conversacion) return { clase: "error", motivo: "conversación no encontrada" };
+  if (!conversacion)
+    return { clase: "error", motivo: "conversación no encontrada" };
 
   // Si hay una persona atendiendo, el agente se calla. Que los dos contesten a
   // la vez es peor que no contestar.
   if (!conversacion.ai_enabled) return abstenerse("ia_desactivada");
-  if (conversacion.state === "human_active") return abstenerse("atiende_una_persona");
+  if (conversacion.state === "human_active")
+    return abstenerse("atiende_una_persona");
 
   // ── 2. La ventana de 24 h ─────────────────────────────────────────────────
   const ventana = puedeEnviarTextoLibre(conversacion.window_expires_at);
   if (!ventana.permitido) {
-    return abstenerse(ventana.motivo, { window_expires_at: conversacion.window_expires_at });
+    return abstenerse(ventana.motivo, {
+      window_expires_at: conversacion.window_expires_at,
+    });
   }
 
   // ── 3. El canal: personalidad y credenciales ──────────────────────────────
   const { data: canal } = await db
     .from("channels")
-    .select("id, phone_number, system_prompt, ycloud_credential_ref, respuesta_a_archivos")
+    .select(
+      "id, phone_number, system_prompt, ycloud_credential_ref, respuesta_a_archivos",
+    )
     .eq("id", conversacion.channel_id)
     .maybeSingle()
     .overrideTypes<FilaCanal, { merge: false }>();
@@ -148,7 +181,11 @@ export async function responderConversacion({
     .select("mensajes_de_contexto, modelo, modelo_respaldo")
     .maybeSingle()
     .overrideTypes<
-      { mensajes_de_contexto: number; modelo: string | null; modelo_respaldo: string | null },
+      {
+        mensajes_de_contexto: number;
+        modelo: string | null;
+        modelo_respaldo: string | null;
+      },
       { merge: false }
     >();
 
@@ -247,8 +284,14 @@ export async function responderConversacion({
       return { clase: "error", motivo: "falta la configuración de OpenRouter" };
     }
 
+    /*
+     * Las capacidades activas de este negocio. Se cargan aquí, junto al resto
+     * del contexto, y no dentro del bucle: son las mismas en todas las vueltas.
+     */
+    const herramientas = await herramientasDelNegocio(workspaceId);
+
     try {
-      const intento = await completarConRespaldo({
+      const intento = await conversar({
         apiKey: apiKeyModelo,
         modelos,
         mensajes: construirMensajes({
@@ -257,9 +300,40 @@ export async function responderConversacion({
           historial,
           cuantos: cuantosRecordar,
         }),
+        herramientas,
       });
 
       respuesta = intento.respuesta;
+
+      if (intento.herramientasUsadas.length > 0) {
+        await registrar("ai.tools_used", {
+          herramientas: intento.herramientasUsadas,
+        });
+      }
+
+      /*
+       * Se quedó pidiendo herramientas sin llegar a escribir. La clienta no
+       * puede quedarse sin respuesta por eso, así que se trata como lo que es:
+       * el agente no supo resolverlo, y pasa a una persona.
+       */
+      /*
+       * Se quedó pidiendo herramientas sin llegar a escribir nada.
+       *
+       * No basta con anotarlo: `respuesta.texto` está **vacío**, y seguir
+       * adelante enviaría un WhatsApp en blanco — que es peor que no contestar,
+       * porque la clienta lo ve y parece que el sistema está roto.
+       *
+       * Así que se trata como lo que de verdad es: el agente no supo resolverlo.
+       * Se despide y pasa a una persona, que es exactamente lo que haría si se
+       * hubiera quedado sin saber qué decir por cualquier otro motivo.
+       */
+      if (intento.seAgotaronLasVueltas) {
+        await registrar("ai.tool_loop_exhausted", {
+          herramientas: intento.herramientasUsadas,
+        });
+
+        respuesta = { ...intento.respuesta, texto: SIN_SALIDA };
+      }
 
       /*
        * El respaldo funcionando es una avería que se ha tapado sola: la clienta
@@ -293,7 +367,9 @@ export async function responderConversacion({
      * La respuesta se envía igualmente: el cliente merece una despedida, no un
      * silencio mientras espera a que alguien lea el aviso.
      */
-    const ultimoDelContacto = [...historial].reverse().find((m) => m.direction === "in")?.text;
+    const ultimoDelContacto = [...historial]
+      .reverse()
+      .find((m) => m.direction === "in")?.text;
 
     handoff = evaluarHandoff({
       respuestaDelModelo: respuesta.texto,
@@ -306,8 +382,14 @@ export async function responderConversacion({
   // ── 9. El envío ───────────────────────────────────────────────────────────
   const apiKeyYCloud = await leerSecreto(canal.ycloud_credential_ref);
   if (!apiKeyYCloud) {
-    await registrar("ai.failed", { fase: "credenciales", motivo: "canal sin clave de YCloud" });
-    return { clase: "error", motivo: "el canal no tiene credenciales de YCloud" };
+    await registrar("ai.failed", {
+      fase: "credenciales",
+      motivo: "canal sin clave de YCloud",
+    });
+    return {
+      clase: "error",
+      motivo: "el canal no tiene credenciales de YCloud",
+    };
   }
 
   let envio;
